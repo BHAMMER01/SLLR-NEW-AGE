@@ -1,0 +1,746 @@
+#include "slrr/boot.hpp"
+#include "slrr/drive_path.hpp"
+#include "slrr/frame_profiler.hpp"
+
+#include "slrr/gameref.hpp"
+#include "slrr/host_cursor.hpp"
+#include "slrr/host_input.hpp"
+#include "slrr/host_sfx.hpp"
+#include "slrr/host_music.hpp"
+#include "slrr/host_game_options.hpp"
+#include "slrr/script_threads.hpp"
+#include "slrr/mainloop.hpp"
+#include "slrr/natives_boot.hpp"
+#include "slrr/object.hpp"
+#include "slrr/part_runtime.hpp"
+#include "slrr/osd_registry.hpp"
+#include "slrr/rpk_index.hpp"
+#include "slrr/slrr_font.hpp"
+#include "slrr/scx_mesh.hpp"
+#include "slrr/scene_instances.hpp"
+#include "slrr/scene_presentation.hpp"
+#include "slrr/scene_sun.hpp"
+#include "slrr/script_events.hpp"
+#include "slrr/section_machine.hpp"
+#include "slrr/video_fmv.hpp"
+#include "slrr_version.h"
+
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <exception>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <mmsystem.h>
+#endif
+
+namespace slrr {
+
+void start_init(Jvm& jvm);
+
+namespace {
+
+int run_tree_smokes(Jvm& jvm, SectionMachine& sections) {
+  if (!jvm.load_class("java.lang.System")) return 4;
+  if (!jvm.load_class("java.lang.Object")) return 4;
+  if (!jvm.load_class("java.lang.Integer")) return 4;
+
+  const Value bn =
+      jvm.invoke("java.lang.System", "buildNumber", "()I", {}, true);
+  if (bn.tag != ValueTag::Int || bn.v.i != 606) {
+    std::fprintf(stderr, "[boot] FAIL buildNumber\n");
+    return 5;
+  }
+
+  Object* a = jvm.new_object("java.lang.Object");
+  Object* b = jvm.new_object("java.lang.Object");
+  Value eq_self = jvm.invoke(
+      "java.lang.Object", "equals", "(Ljava.lang.Object;)I",
+      {Value::make_obj(a), Value::make_obj(a)}, false);
+  Value eq_other = jvm.invoke(
+      "java.lang.Object", "equals", "(Ljava.lang.Object;)I",
+      {Value::make_obj(a), Value::make_obj(b)}, false);
+  Value eq_null = jvm.invoke(
+      "java.lang.Object", "equals", "(Ljava.lang.Object;)I",
+      {Value::make_obj(a), Value::make_obj(nullptr)}, false);
+
+  const bool eq_ok = eq_self.tag == ValueTag::Int && eq_self.v.i == 1 &&
+                     eq_other.tag == ValueTag::Int && eq_other.v.i == 0 &&
+                     eq_null.tag == ValueTag::Int && eq_null.v.i == 0;
+  std::printf("[boot] Object.equals self=%d other=%d null=%d %s\n",
+              eq_self.tag == ValueTag::Int ? eq_self.v.i : -1,
+              eq_other.tag == ValueTag::Int ? eq_other.v.i : -1,
+              eq_null.tag == ValueTag::Int ? eq_null.v.i : -1,
+              eq_ok ? "ok=1" : "ok=0");
+  if (!eq_ok) return 6;
+
+  Object* iv = jvm.new_object("java.lang.Integer");
+  iv->fields["number"] = Value::make_int(42);
+  Value ivv = jvm.invoke("java.lang.Integer", "intValue", "()I",
+                         {Value::make_obj(iv)}, false);
+  const bool iv_ok = ivv.tag == ValueTag::Int && ivv.v.i == 42;
+  std::printf("[boot] Integer.intValue %d %s\n",
+              ivv.tag == ValueTag::Int ? ivv.v.i : -1, iv_ok ? "ok=1" : "ok=0");
+  if (!iv_ok) return 7;
+
+  if (!jvm.load_class("java.game.SplashScreen")) return 4;
+  if (!jvm.load_class("java.game.MainMenu")) return 4;
+  if (!jvm.load_class("java.game.GameLogic")) return 4;
+  if (!jvm.load_class("java.util.resource.ResourceRef")) return 4;
+
+  // OptionsDialog/MainMenuDialog ctor needs GameLogic.player.controller.
+  sections.seed_player("Player");
+
+  // Splash.enter TREE via SectionMachine — ctor runs GameType.createNativeInstance.
+  Object* pic = jvm.new_object("java.util.resource.ResourceRef");
+  pic->fields["id"] = Value::make_int(0x0005);
+  Object* splash = jvm.new_object("java.game.SplashScreen");
+  jvm.invoke("java.game.SplashScreen", "<init>",
+             "(Ljava.util.resource.ResourceRef;)V",
+             {Value::make_obj(splash), Value::make_obj(pic)}, false);
+  sections.change_active_section(splash);
+  const bool enter_ok =
+      sections.actual() == splash && splash->fields.count("osd");
+  std::printf("[boot] SplashScreen.enter TREE osd=%d %s\n",
+              splash->fields.count("osd") ? 1 : 0, enter_ok ? "ok=1" : "ok=0");
+  if (!enter_ok) return 8;
+
+  // osdCommand → MainMenu: Splash.exit TREE + MainMenu.enter TREE (mmd.show TREE).
+  jvm.invoke("java.game.SplashScreen", "osdCommand", "(I)V",
+             {Value::make_obj(splash), Value::make_int(35)}, false);
+  Object* actual = jvm.get_static("java.game.GameLogic", "actualState").v.o;
+  Object* mmd = nullptr;
+  if (actual) {
+    auto mit = actual->fields.find("mmd");
+    if (mit != actual->fields.end() && mit->second.tag == ValueTag::Obj)
+      mmd = mit->second.v.o;
+  }
+  const int32_t n_widgets = osd_widget_count();
+  const bool menu_ok =
+      actual && actual->class_name.find("MainMenu") != std::string::npos && mmd &&
+      mmd->fields.count("osd") && n_widgets > 0;
+  std::printf("[boot] Splash→MainMenu mmd=%d osd=%d widgets=%d texts=%zu "
+              "section=%s %s\n",
+              mmd ? 1 : 0, mmd && mmd->fields.count("osd") ? 1 : 0, n_widgets,
+              slrr_osd_texts().size(),
+              actual ? actual->class_name.c_str() : "(null)",
+              menu_ok ? "ok=1" : "ok=0");
+  std::fflush(stdout);
+  if (!menu_ok) return 9;
+
+  std::printf("[boot] MainMenu.enter ok=1\n");
+  std::printf("[boot] probe ok classes=%d buildNumber=%d tree=1\n",
+              jvm.classes_loaded(), bn.v.i);
+  std::fflush(stdout);
+  start_init(jvm);
+  return 0;
+}
+
+}  // namespace
+
+// Stock entry: Init(int) → Sound, Frontend, controllers, GameLogic.
+// The first native with no host binding aborts this chain.
+void start_init(Jvm& jvm) {
+  if (!jvm.load_class("java.game.Init")) {
+    std::fprintf(stderr, "[boot] Init class missing\n");
+    return;
+  }
+  Object* init = jvm.new_object("java.game.Init");
+  jvm.clear_unbound();
+  jvm.set_halt_on_unbound(true);
+  try {
+    jvm.invoke("java.game.Init", "<init>", "(I)V",
+               {Value::make_obj(init), Value::make_int(0)}, false);
+  } catch (const std::exception& e) {
+    std::fprintf(stderr, "[boot] Init aborted: %s\n", e.what());
+  }
+  jvm.set_halt_on_unbound(false);
+  if (!jvm.unbound_native().empty())
+    std::printf("[boot] Init stopped: unbound %s\n",
+                jvm.unbound_native().c_str());
+  else
+    std::printf("[boot] Init.<init> returned\n");
+  {
+    Value av = jvm.get_static("java.game.GameLogic", "actualState");
+    const char* name = "(none)";
+    if (av.tag == ValueTag::Obj && av.v.o) name = av.v.o->class_name.c_str();
+    std::printf("[boot] Init actualState=%s\n", name);
+  }
+  std::fflush(stdout);
+}
+
+int boot_probe(Jvm& jvm, const BootOptions& opt) {
+  jvm.set_game_root(opt.game_root);
+  slrr_font_set_game_root(opt.game_root);
+  video_fmv_set_game_root(opt.game_root);
+  if (!jvm.bootstrap_classpath()) return 2;
+
+  RpkIndex rpk;
+  rpk.set_root(opt.game_root);
+  SectionMachine sections(&jvm);
+  register_boot_natives(jvm, rpk, sections);
+
+  const int32_t opened = rpk.open_all();
+  const RpkPack* fe_pack = rpk.pack_by_path("frontend.rpk");
+  const RpkPack* garage_pack = rpk.pack_by_path("misc\\garage.rpk");
+  const RpkPack* mwm_pack = rpk.pack_by_path("MW_Mod.rpk");
+  const int32_t fe = fe_pack ? fe_pack->pack_id : 0;
+  std::printf("[boot] rpk open_all=%d packs=%d entries=%d frontend=%d "
+              "garage=%d MW_Mod=%d\n",
+              opened, rpk.pack_count(), rpk.total_entries(), fe,
+              garage_pack ? garage_pack->pack_id : 0,
+              mwm_pack ? mwm_pack->pack_id : 0);
+
+  // ResourceRef.resolve smoke: frontend local 0x011D (street button).
+  Object* rr = jvm.new_object("java.util.resource.ResourceRef");
+  rr->fields["id"] = Value::make_int(
+      static_cast<int32_t>(RpkIndex::make_full_id(fe, 0x011D)));
+  jvm.invoke("java.util.resource.ResourceRef", "load", "()V",
+             {Value::make_obj(rr)}, false);
+  const int loaded =
+      (rr->fields.count("loaded") && rr->fields["loaded"].tag == ValueTag::Int)
+          ? rr->fields["loaded"].v.i
+          : 0;
+  std::string tex;
+  if (rr->fields.count("texture") && rr->fields["texture"].tag == ValueTag::Obj &&
+      rr->fields["texture"].v.o)
+    tex = rr->fields["texture"].v.o->str;
+  std::printf("[boot] ResourceRef frontend:0x011D loaded=%d alias=%s tex=%s\n",
+              loaded, rr->str.c_str(), tex.c_str());
+
+  const ScxMeshInfo scx =
+      parse_scx_file(opt.game_root + "/misc/garage/g1/garazs_01.scx");
+  std::printf("[boot] SCX garazs_01 v=%u groups=%d verts=%d tris=%d ok=%d %s\n",
+              scx.version, scx.groups, scx.vertices, scx.triangles,
+              scx.ok ? 1 : 0, scx.error.c_str());
+
+  return run_tree_smokes(jvm, sections);
+}
+
+int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
+  jvm.set_game_root(opt.game_root);
+  if (!jvm.bootstrap_classpath()) return 2;
+  natives_fix_random_seed(opt.random_seed);
+
+  host_sfx_set_game_root(opt.game_root);
+  host_music_set_root(opt.game_root);
+  host_cursor_set_search_roots(opt.game_root);
+  slrr_font_set_game_root(opt.game_root);
+  video_fmv_set_game_root(opt.game_root);
+
+  RpkIndex rpk;
+  rpk.set_root(opt.game_root);
+  SectionMachine sections(&jvm);
+  register_boot_natives(jvm, rpk, sections);
+
+  host_game_options_load(jvm);
+  const int32_t opened = rpk.open_all();
+  if (!opt.vehicle_osd.empty()) part_set_hud_preview(opt.vehicle_osd);
+  part_set_wind(opt.wind_speed, opt.wind_heading);
+  std::printf("[phys] wind %.1f m/s at 10 m towards %.0f deg\n", opt.wind_speed,
+              opt.wind_heading);
+  const RpkPack* fe_found = rpk.pack_by_path("frontend.rpk");
+  const RpkPack* garage_found = rpk.pack_by_path("misc\\garage.rpk");
+  const RpkPack* mwm_found = rpk.pack_by_path("MW_Mod.rpk");
+  const int32_t garage_pack = garage_found ? garage_found->pack_id : 0;
+  std::printf("[boot] rpk open_all=%d packs=%d entries=%d frontend=%d "
+              "garage=%d MW_Mod=%d\n",
+              opened, rpk.pack_count(), rpk.total_entries(),
+              fe_found ? fe_found->pack_id : 0, garage_pack,
+              mwm_found ? mwm_found->pack_id : 0);
+
+  // Gadget.HIGHLIGHT_NORMAL = frontend:0x012B (icon_highlite).
+  {
+    std::string hl = rpk.texture_path_for_id(0x012B);
+    if (hl.empty())
+      hl = opt.game_root + "\\frontend\\textures\\buttons\\Info_holder.ptx";
+    osd_set_highlight_path(std::move(hl));
+    osd_set_disabled_highlight_path(rpk.texture_path_for_id(0x013c));
+  }
+
+  if (!jvm.load_class("java.lang.System")) return 4;
+  const Value bn =
+      jvm.invoke("java.lang.System", "buildNumber", "()I", {}, true);
+  if (bn.tag != ValueTag::Int || bn.v.i != 606) {
+    std::fprintf(stderr, "[boot] FAIL buildNumber\n");
+    return 5;
+  }
+
+  const bool want_window =
+      opt.window || opt.render == RenderBackendKind::Bgfx || opt.auto_new;
+  if (want_window) {
+    const auto mode = host_game_options().video.mode;
+    if (!render.open(mode.width, mode.height, "OpenSLRR - " SLRR_VERSION)) {
+      std::fprintf(stderr, "[boot] render.open failed (%s)\n", render.name());
+      return 3;
+    }
+    bgfx_set_debug_context(render, jvm, sections);
+    bgfx_set_debug_startup(render, opt.vsync, opt.debug_overlay);
+    osd_set_framebuffer(render.width(), render.height());
+    host_set_render_callbacks([&render]() {
+      if (!render.ready() || !bgfx_osd_draw_enabled(render)) return;
+      // One swap presents the plate before the synchronous load continues.
+      const int passes = scene_transition_active() || osd_loading_dialog() ||
+                         !osd_loading_overlay().empty() ? 1 : 7;
+      for (int i = 0; i < passes; ++i) render.flush();
+    }, [&render](const std::string& path) { return render.request_screenshot(path); });
+    // Click → LoadingScreen.show presents this plate before the rest of the
+    // handler (garage enter, track load). Skipped until the splash is up,
+    // so Init's own show() cannot flash the clear color.
+    host_set_loading_present([&jvm, &render]() {
+      if (!render.ready() || !bgfx_osd_draw_enabled(render)) return;
+      std::string pic = jvm.game_root();
+      if (!pic.empty() && pic.back() != '\\' && pic.back() != '/')
+        pic.push_back('\\');
+      pic += "frontend\\textures\\Loading.dds";
+      osd_set_loading_overlay(pic);
+      // The pump below delivers clicks before the Java modal exists. With
+      // the plate set they are not produced; drop what was already latched.
+      host_input_cancel_pointer_gestures();
+      render.pump(0);
+      render.flush();
+    });
+    // HUD text positions assume Frontend.setFonts for this resolution —
+    // SLII17 at 800×600 overflows the garage header (stock uses SLII11).
+    frontend_set_fonts(jvm, render.width(), render.height());
+    // Live resize: stock Frontend.rebuild() — bump SLII11↔17↔24 with video_y.
+    osd_set_framebuffer_listener([&jvm](int32_t w, int32_t h) {
+      frontend_set_fonts(jvm, w, h);
+    });
+    // Stock Engine_boot FMV intros (Activision → Invictus). ESC skips.
+    // --no-wait / smoke: cap a few frames so CI does not block on AVI.
+    {
+      // Probe already built the menu OSD. Drop it so intros are just the movie.
+      osd_clear_widgets();
+      slrr_text_clear_all();
+      const int32_t cap = (opt.max_frames > 0) ? 2 : 0;
+      if(opt.spawn_car.empty()&&opt.bench_career.empty())video_fmv_play_boot_intros(cap, [&render]() {
+        render.pump(0);
+        if (render.quit_requested()) return false;
+        render.flush();
+        return !render.quit_requested();
+      });
+      if (render.quit_requested()) {
+        video_fmv_close();
+        host_set_loading_present({});
+        osd_set_framebuffer_listener({});
+        host_music_stop();
+        render.close();
+        host_set_render_callbacks({}, {});
+        return 0;
+      }
+    }
+  }
+
+  // Stock entry is Init(int), which ends in changeActiveSection(SplashScreen).
+  // Do not build a host splash on top of that.
+  {
+    const std::string pname =
+        opt.player_name.empty() ? "Player" : opt.player_name;
+    sections.seed_player(pname);
+    jvm.set_static("java.game.GameLogic", "_autoNewPlayerName",
+                   Value::make_obj(jvm.new_string(pname)));
+    start_init(jvm);
+    Value gv = jvm.get_static("java.game.GameLogic", "garage");
+    if (gv.tag == ValueTag::Obj && gv.v.o) {
+      sections.set_garage(gv.v.o);
+    } else {
+      Object* garage = jvm.new_object("java.game.Garage");
+      jvm.invoke("java.game.Garage", "<init>", "()V",
+                 {Value::make_obj(garage)}, false);
+      sections.set_garage(garage);
+    }
+    // Init's Java transition has already run enter and built the OSD/timer.
+    // Adopt its result exactly as the frame loop does; do not replay enter.
+    mainloop_adopt_section(jvm, sections);
+    std::printf("[boot] after Init section=%s\n",
+                sections.actual_name().c_str());
+    if (want_window) {
+      bgfx_set_osd_overlay(render, true);
+      mainloop_sync_section_render(render, sections);
+      if (render.ready()) {
+        render.pump(0);
+        render.flush();
+      }
+    }
+  }
+
+  if (!opt.bench_career.empty()) {
+    std::string path = opt.bench_career;
+    if (path.back() != '/' && path.back() != '\\')
+      path += '/';
+    auto result =
+        jvm.invoke("java.game.GameLogic", "load", "(Ljava.lang.String;)I",
+                   {Value::make_obj(jvm.new_string(path))}, true);
+    if (result.tag != ValueTag::Int || result.v.i != 0) {
+      std::fprintf(stderr, "[bench] career load failed\n");
+      if (render.ready())
+        render.close();
+      return 12;
+    }
+    jvm.set_static("java.game.GameLogic", "carrerInProgress",
+                   Value::make_int(1));
+    jvm.set_static("java.game.GameLogic", "gameMode", Value::make_int(1));
+    sections.change_active_section(sections.garage());
+    std::printf("[bench] career loaded\n");
+  } else if (!opt.spawn_car.empty()) {
+    auto colon = opt.spawn_car.find_last_of(':');
+    const RpkPack *pack =
+        colon == std::string::npos
+            ? nullptr
+            : rpk.pack_by_name(opt.spawn_car.substr(0, colon));
+    uint32_t local = 0;
+    try {size_t used=0;std::string value=opt.spawn_car.substr(colon+1);unsigned long id=std::stoul(value,&used,0);if(used==value.size()&&id>0&&id<=0xffff)local=static_cast<uint32_t>(id);}catch(const std::exception&){}
+    Object* player=sections.seed_player(opt.player_name);
+    Object* car=pack&&local?vehicle_spawn_stock(jvm,rpk,player,RpkIndex::make_full_id(pack->pack_id,local)):nullptr;
+    if(!car){std::fprintf(stderr,"[boot] cannot spawn car %s\n",opt.spawn_car.c_str());if(render.ready())render.close();return 11;}
+    player->fields["car"]=Value::make_obj(car);
+    // A development session enters the garage directly; it never submits
+    // the NEW CAREER dialog or writes a save as a side effect of spawning.
+    sections.change_active_section(sections.garage());
+    std::printf("[boot] spawned %s parts=%zu\n",opt.spawn_car.c_str(),part_installed_tree(car).size());
+  } else if (opt.auto_new) {
+    std::fprintf(stderr,
+                 "[boot] WARN --auto-new bypasses Splash→MainMenu (stock "
+                 "loop). Use --game without --auto-new for Soft path.\n");
+    if (!sections.auto_new_career(opt.player_name)) {
+      std::fprintf(stderr, "[boot] FAIL auto-new → Garage\n");
+      if (render.ready()) render.close();
+      return 10;
+    }
+  }
+
+  // Garage.java creates the selected GroundRef and its RenderRef children.
+  // Their meshes and collisions belong to that world, including G2/G3/ROC.
+  // Do not install a permanent G1 copy in the renderer or static floor cache.
+  bgfx_clear_scene(render);
+  int32_t scx_verts = 0;
+  int32_t scx_tris = 0;
+
+  // Garage preload can eat the Splash 3s timer — restart it so MainLoop
+  // actually shows the plate for ~3s (stock: splash after intros, then menu).
+  if (want_window && !opt.auto_new && sections.actual() &&
+      sections.actual()->class_name.find("Splash") != std::string::npos) {
+    Object* splash = sections.actual();
+    jvm.invoke("java.game.SplashScreen", "removeAllTimers", "()V",
+               {Value::make_obj(splash)}, false);
+    jvm.invoke("java.game.SplashScreen", "addTimer", "(FI)V",
+               {Value::make_obj(splash), Value::make_float(3.f),
+                Value::make_int(1)},
+               false);
+    std::printf("[boot] SplashScreen timer re-armed after garage preload\n");
+  }
+
+  if (opt.auto_cmd != 0 && sections.actual() &&
+      sections.actual()->class_name.find("Garage") != std::string::npos) {
+    jvm.invoke("java.io.Input", "queueAxis", "(IF)V",
+               {Value::make_int(35), Value::make_float(1.f)}, true);
+    std::printf("[boot] auto-cmd Garage.osdCommand(%d)\n", opt.auto_cmd);
+    jvm.invoke("java.game.Garage", "osdCommand", "(I)V",
+               {Value::make_obj(sections.actual()),
+                Value::make_int(opt.auto_cmd)},
+               false);
+  }
+
+  int32_t osd_n = osd_widget_count();
+  Object* garage_obj = sections.garage();
+  if (!garage_obj) garage_obj = sections.actual();
+  if (garage_obj) {
+    auto it = garage_obj->fields.find("osdButtonCount");
+    if (it != garage_obj->fields.end() && it->second.tag == ValueTag::Int)
+      osd_n = it->second.v.i;
+    if (osd_n <= 0) osd_n = osd_widget_count();
+  }
+  const bool in_garage =
+      sections.actual() &&
+      sections.actual()->class_name.find("Garage") != std::string::npos;
+  bgfx_set_garage_viewport(render, in_garage, osd_n);
+  if (!in_garage) bgfx_set_osd_overlay(render, true);
+
+  // LBUTTON → the handler stored on the button. osdCommand is the TREE.
+  // Object.wait (Dialog.display) pumps the same frame until notify.
+  using Clock = std::chrono::steady_clock;
+  auto last_frame = Clock::now();
+  auto elapsed = [&last_frame]() {
+    const auto now = Clock::now();
+    const double seconds = std::chrono::duration<double>(now - last_frame).count();
+    last_frame = now;
+    return seconds;
+  };
+  host_set_script_pump([&jvm, &render, &sections, &elapsed]() -> bool {
+    render.pump(16);
+    if (render.quit_requested()) {
+      std::printf("[boot] script pump stop window\n");
+      return false;
+    }
+    mainloop_sync_section_render(render, sections);
+    const MainLoopFrameResult fr =
+        mainloop_frame(jvm, render, sections, elapsed());
+#ifdef _WIN32
+    Sleep(1);
+#endif
+    if (fr.quit || render.quit_requested()) {
+      std::printf("[boot] script pump stop quit=%d window=%d section=%s\n",
+                  fr.quit ? 1 : 0, render.quit_requested() ? 1 : 0,
+                  sections.actual_name().c_str());
+      return false;
+    }
+    return true;
+  });
+  osd_set_click_handler([&jvm, &sections, &render](const OsdWidget& w) {
+    if (video_fmv_block_osd()) return;
+    if (w.button && jvm.tree_instance_of(w.button, "java.render.osd.MultiChoice"))
+      jvm.invoke(w.button->class_name, "click", "()V", {Value::make_obj(w.button)}, false);
+    else if (w.event_source) {
+      // Osd.event_handler reads only EC_LCLICK (5) and matches the icon's id.
+      const std::string click = "5 0 " + std::to_string(gameref_make_live(w.event_source));
+      std::printf("[osd] icon click delivered=%d\n",
+                  script_event_emit(jvm, w.event_source, nullptr, 0x00010000,
+                                    Value::make_obj(jvm.new_string(click))));
+    } else
+      sections.dispatch_osd_command(w.handler, w.cmd);
+    mainloop_adopt_section(jvm, sections);
+    mainloop_sync_section_render(render, sections);
+  });
+
+  std::printf(
+      "[boot] render=%s window=%d auto_new=%d auto_cmd=%d section=%s osd=%d "
+      "scx_verts=%d\n",
+      render.name(), want_window ? 1 : 0, opt.auto_new ? 1 : 0, opt.auto_cmd,
+      sections.actual_name().c_str(), osd_n, scx_verts);
+      (void)scx_tris;
+
+  int32_t frames = 0;
+  if (render.ready()) {
+#ifdef _WIN32
+    // Keep the loop's short yield from becoming a whole Windows timer tick.
+    const bool precise_sleep = timeBeginPeriod(1) == TIMERR_NOERROR;
+#endif
+    const bool until_quit = opt.max_frames <= 0;
+    if (until_quit)
+      std::printf("[boot] Soft MainLoop until window close\n");
+    if (opt.perf_log) perf::enable(opt.perf_log_path);
+    // Development benchmark: a straight full-throttle run from the spot
+    // where the player first drives an outdoor world.
+    bool bench_running = false;
+    int bench_frames = 0;
+    double bench_wall=0;bool bench_profile_started=false;
+    constexpr int kBenchRate = 60;
+    // The car settles on its wheels, at the fixed step, before the throttle.
+    constexpr int kBenchSettle = 2 * kBenchRate;
+    bool bench_map_started = opt.bench_map.empty();
+    int bench_shot = 0;
+    // A track without ground props (Test Track, drag strip) never reports
+    // them; there the car resting on all its wheels for 5 s is the cue.
+    int bench_supported_frames = 0;
+    // --auto-cmd demo: MainMenu.CMD_DEMO once the main menu is up; the race
+    // is then measured like the benchmark drive (#358).
+    constexpr int kMainMenuDemo = 59;
+    bool demo_requested = false;
+    // Recorded drives (#358): --record-path writes the player car's pose
+    // every frame of normal play; --replay-path moves the benchmark car
+    // along a recording, so every build renders the same drive.
+    DrivePathWriter path_writer;
+    if (!opt.record_path.empty()) {
+      if (path_writer.open(opt.record_path))
+        std::printf("[path] recording to %s\n", opt.record_path.c_str());
+      else
+        std::fprintf(stderr, "[path] cannot write %s\n", opt.record_path.c_str());
+    }
+    DrivePath replay;
+    float bench_seconds = opt.bench_drive_seconds;
+    if (!opt.replay_path.empty()) {
+      std::string error;
+      if (replay.load(opt.replay_path, &error)) {
+        if (bench_seconds <= 0.f) bench_seconds = static_cast<float>(replay.duration());
+        std::printf("[path] replay %s: %zu samples, %.1f s\n", opt.replay_path.c_str(),
+                    replay.samples().size(), replay.duration());
+      } else {
+        std::fprintf(stderr, "[path] %s\n", error.c_str());
+      }
+    }
+    while (until_quit || frames < opt.max_frames) {
+      // Soft PollWindowQuit adjacency — pump before Input/sim like stock
+      // neighbors (Input_tick still inside mainloop_frame).
+      render.pump(16);
+      mainloop_sync_section_render(render, sections);
+      const double real_dt = elapsed();
+      const double frame_dt = bench_running && !opt.bench_realtime ? 1.0 / kBenchRate : real_dt;
+      MainLoopFrameResult fr = mainloop_frame(jvm, render, sections, frame_dt);
+      if (path_writer.is_open() && !bench_running) {
+        float local[16];
+        if (Object* car = part_controlled_chassis(); car && part_published_local(car, local))
+          path_writer.write(frame_dt, local);
+      }
+      {
+        perf::Scope scope(perf::Zone::Gc);
+        jvm.gc_safe_point();
+      }
+      perf::end_frame();
+      if (bench_running) {
+        if (opt.bench_realtime) {
+          bench_wall += real_dt;
+          bench_frames = int((bench_wall - 2) * kBenchRate);
+        } else
+          ++bench_frames;
+      }
+      ++frames;
+      if (fr.quit) break;
+      if (!bench_map_started && sections.actual() &&
+          sections.actual()->class_name.find("Garage") != std::string::npos) {
+        // Same call TrackSelect makes for TAKE IT, without the menu.
+        bench_map_started = true;
+        const Value maps = jvm.get_static("java.game.GameLogic", "MapBox");
+        Object* box = maps.tag == ValueTag::Obj ? maps.v.o : nullptr;
+        Object* entries = nullptr;
+        int count = 0;
+        if (box) {
+          const auto data = box->fields.find("elementData");
+          const auto size = box->fields.find("elementCount");
+          if (data != box->fields.end() && data->second.tag == ValueTag::Obj)
+            entries = data->second.v.o;
+          if (size != box->fields.end() && size->second.tag == ValueTag::Int)
+            count = size->second.v.i;
+        }
+        Object* track = nullptr;
+        for (int i = 0; entries && i < count && i < static_cast<int>(entries->slots.size()); ++i) {
+          const Value& entry = entries->slots[static_cast<size_t>(i)];
+          if (entry.tag == ValueTag::Obj && entry.v.o &&
+              entry.v.o->class_name.find(opt.bench_map) != std::string::npos) {
+            track = entry.v.o;
+            break;
+          }
+        }
+        // Some script packs leave GameLogic.MapBox uninitialized when the
+        // development garage is entered directly.  The stock Valo City map
+        // class is still available, so instantiate it as a safe fallback.
+        if (!track && opt.bench_map.find("Valo") != std::string::npos) {
+          track = jvm.new_object("java.game.ValoCity_Track");
+          if (track) {
+            std::printf("[bench] MapBox empty; using java.game.ValoCity_Track\n");
+            jvm.invoke("java.game.ValoCity_Track", "StartMap", "()V",
+                       {Value::make_obj(track)}, false);
+            mainloop_adopt_section(jvm, sections);
+            mainloop_sync_section_render(render, sections);
+          }
+        }
+        if (track) {
+          if (track->class_name != "java.game.ValoCity_Track") {
+            std::printf("[bench] start map %s\n", track->class_name.c_str());
+            jvm.invoke(track->class_name, "StartMap", "()V", {Value::make_obj(track)}, false);
+            mainloop_adopt_section(jvm, sections);
+            mainloop_sync_section_render(render, sections);
+          }
+        } else {
+          std::fprintf(stderr, "[bench] no MapBox track matches %s\n", opt.bench_map.c_str());
+        }
+      }
+      if (opt.auto_demo && !demo_requested && sections.actual() &&
+          sections.actual()->class_name.find("MainMenu") != std::string::npos) {
+        demo_requested = true;
+        std::printf("[demo] MainMenu.osdCommand(%d)\n", kMainMenuDemo);
+        jvm.invoke("java.game.MainMenu", "osdCommand", "(I)V",
+                   {Value::make_obj(sections.actual()), Value::make_int(kMainMenuDemo)},
+                   false);
+      }
+      if (demo_requested && !bench_running && bench_seconds > 0.f && sections.actual() &&
+          sections.actual()->class_name.find("Valocity") != std::string::npos &&
+          !scene_transition_active() && !osd_loading_dialog() &&
+          osd_loading_overlay().empty()) {
+        // The demo picks a random hour; --bench-time replaces it.
+        bench_running = true;
+        bench_frames = -kBenchSettle;
+        if (opt.bench_hour >= 0.f) {
+          const float seconds = std::fmod(opt.bench_hour, 24.f) * 3600.f;
+          jvm.invoke("java.game.GameLogic", "setTime", "(F)V",
+                     {Value::make_float(seconds)}, true);
+          scene_sun_set_time(seconds);
+        }
+        std::printf("[demo] measuring %.1f s\n", bench_seconds);
+      }
+      if (bench_seconds > 0.f) {
+        auto& input = host_input();
+        Object* bench_car = part_controlled_chassis();
+        PartPhysicsState resting;
+        bool supported = !bench_running && bench_car &&
+                         part_physics_state(bench_car, resting) && resting.active;
+        for (bool contact : resting.contact) supported = supported && contact;
+        bench_supported_frames = supported ? bench_supported_frames + 1 : 0;
+        const bool bench_track_ready = opt.bench_map.empty() ||
+            (sections.actual() && sections.actual()->class_name.find("Valocity") != std::string::npos);
+        if (!bench_running && bench_car && bench_track_ready &&
+            (scene_instances_has_ground_props() || bench_supported_frames >= 5 * kBenchRate) &&
+            !scene_transition_active() && !osd_loading_dialog() &&
+            osd_loading_overlay().empty()) {
+          bench_running = true;
+          bench_frames = -kBenchSettle;
+          if (opt.bench_hour >= 0.f) {
+            // The debug panel's time-of-day slider makes the same two calls.
+            const float seconds = std::fmod(opt.bench_hour, 24.f) * 3600.f;
+            jvm.invoke("java.game.GameLogic", "setTime", "(F)V",
+                       {Value::make_float(seconds)}, true);
+            scene_sun_set_time(seconds);
+          }
+          std::printf("[bench] drive start: %.1f s full throttle\n",
+                      bench_seconds);
+        }
+        if(bench_running&&bench_frames>=0&&!bench_profile_started&&opt.perf_log){perf::restart(opt.bench_realtime?0:kBenchRate);bench_profile_started=true;}
+        input.bench_throttle = !bench_running ? -1.f : bench_frames >= 0 ? 1.f : 0.f;
+        // A 10 Hz trace, the interval of the original-game telemetry
+        // (EXTERNAL_RESEARCH §4), to compare straight-line acceleration.
+        PartPhysicsState trace;
+        if (bench_running && bench_frames >= 0 && bench_frames % (kBenchRate / 10) == 0 &&
+            bench_car && part_physics_state(bench_car, trace))
+          std::printf("[bench] t=%.1f speed=%.2f km/h rpm=%.0f gear=%d\n",
+                      bench_frames / double(kBenchRate), trace.speed_kph, trace.rpm,
+                      trace.gear);
+        if (bench_running && !opt.bench_shots.empty() && bench_frames >= 0 &&
+            bench_frames >= 10 * kBenchRate * bench_shot) {
+          char name[32];
+          std::snprintf(name, sizeof(name), "\\t%02d", bench_shot * 10);
+          render.request_screenshot(opt.bench_shots + name);
+          ++bench_shot;
+        }
+        if (bench_running && bench_car && !replay.empty()) {
+          // From the settle on, the car follows the recording: held at its
+          // first pose while the drive settles, then at the fixed step.
+          if (bench_frames == -kBenchSettle) part_set_external_motion(bench_car, true);
+          const double t = (bench_frames > 0 ? bench_frames : 0) / double(kBenchRate);
+          const auto pose = replay.at(t);
+          part_set_external_pose(bench_car, pose.data(), 1.0 / kBenchRate);
+        }
+        if (bench_running && bench_frames >= bench_seconds * kBenchRate) {
+          std::printf("[bench] drive done\n");
+          break;
+        }
+      }
+      if (until_quit) {
+#ifdef _WIN32
+        // Yield the rest of the time slice only. Sleep(1) cost 1.5 ms per
+        // frame even at 1 ms timer resolution, a quarter of a 160 FPS frame.
+        // With VSync on, presentation still paces the loop.
+        SwitchToThread();
+#endif
+      }
+    }
+    host_set_script_pump(nullptr);
+    script_threads_shutdown(jvm);
+    video_fmv_close();
+    host_game_options_update(jvm, true);
+    host_music_stop();
+    render.close();
+    host_set_render_callbacks({}, {});
+#ifdef _WIN32
+    if (precise_sleep) timeEndPeriod(1);
+#endif
+  }
+  std::printf("[boot] game exit=0 frames=%d section=%s\n", frames,
+              sections.actual_name().c_str());
+  return 0;
+}
+
+}  // namespace slrr

@@ -1,0 +1,289 @@
+#pragma once
+
+#include "slrr/scx_mesh.hpp"
+#include "slrr/scene_sun.hpp"
+#include "slrr/script_lights.hpp"
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <utility>
+#include <vector>
+
+namespace slrr {
+class RpkIndex;
+struct GameRefState;
+namespace physics { struct Vec3; }
+
+struct SceneInstance {
+  SceneSun lighting;
+  bool cull_backfaces = false;
+  void *key = nullptr;
+  std::shared_ptr<const ScxGeometry> geometry;
+  // Column-major renderer matrix; script meters, with the SCX Z reflection.
+  std::array<float, 16> transform{};
+  float opacity = 1.f;
+  bool sky = false;
+  bool emissive_overlay = false;  // authored night facade, drawn after opaque geometry
+  uint32_t color = 0xffffff;
+  int paint_slot = -1;
+  std::string paint_texture;
+  std::vector<std::pair<size_t, std::string>> texture_replacements;
+  bool vehicle_material = false;
+  bool ground_prop = false;  // a map placement (debug toggle, #243)
+  uint32_t light_flags = 0;
+  // Render-object id. Carries `flags` (dynamic shadow caster) and `shd_*`.
+  int32_t type_id = 0;
+  // Upload-space bone palette (scaled, Z flipped). Empty keeps the CPU pose.
+  // Inside a renderer frame, a walker outside the collecting view has
+  // gpu_skin set and an empty palette; it is kept for residency, not drawn.
+  bool gpu_skin = false;
+  std::vector<float> skin;
+};
+
+// Flat blob under a traffic car (kocsiarnyek). Vectors are metres in the
+// render object's local space, before the mesh Z flip.
+struct SceneBatchInstance {
+  std::array<float, 16> transform{};
+  uint32_t color = 0xffffff;
+};
+struct SceneBatch {
+  std::shared_ptr<const ScxGeometry> geometry;
+  SceneSun lighting{};
+  std::vector<SceneBatchInstance> instances;
+};
+
+struct SceneShadowDecal {
+  bool present = false;
+  float center[3] = {};
+  float axis_u[3] = {};
+  float axis_v[3] = {};
+  float uv[4] = {0.f, 0.f, 1.f, 1.f};
+  std::string texture;
+};
+
+void scene_instances_set_resources(const RpkIndex *resources);
+void scene_instances_set_envmap(uint32_t resource);
+std::string scene_instances_envmap();
+// Scene.java declares interior/exterior independently of the map mesh format.
+// Automatic preserves callers without section metadata (tools and old scripts).
+enum class SceneEnvironment { Automatic, Exterior, Interior };
+void scene_instances_select(void *world, void *skydome, bool preview_lamps,
+                            SceneEnvironment environment = SceneEnvironment::Automatic);
+bool scene_instances_outdoor();
+using SceneFrustum = std::array<std::array<float, 4>, 6>;
+bool scene_instances_has_ground_props();
+void* scene_instances_world();
+// Optional projected-size filter: true keeps the sphere. No depth/occlusion
+// data is read. Null disables filtering for shadow maps and reflection faces.
+using SceneSizeFilter = bool (*)(const float center[3], float radius, void* user);
+void scene_instances_set_size_filter(SceneSizeFilter test, void* user);
+// Map prop LOD (#252). The stock `lods` thresholds are size ratios; the
+// ratio used here is the placement's bounding radius over its distance to
+// `eye` (script space) times `bias`. Only a collection with `update` set (the
+// main view) stores each placement's level, so AO, shadow and reflection
+// passes reuse the main view's choice. `force_highest` restores the old
+// behaviour (highest LOD only). Without a valid view the highest LOD is used.
+struct ScenePropLodView {
+  std::array<float, 3> eye{};
+  float bias = 1.f;
+  bool force_highest = false, update = false, valid = false;
+};
+void scene_instances_set_lod_view(const ScenePropLodView& view);
+// LOD level for size ratio `size` with ascending `thresholds`: the number of
+// thresholds reached. From `current` (>= 0) a level changes only when the
+// ratio passes the threshold by the factor `hysteresis` (no flicker).
+int scene_prop_lod_level(int current, float size, const std::vector<float>& thresholds,
+                         float hysteresis = 1.1f);
+// Placements with a LOD chain in the loaded maps, for tests and statistics.
+size_t scene_instances_lod_placements();
+// With `night_batches`, visible night-only props (authored night facades) go
+// there, one entry per night mesh and shell in a layout kept across frames
+// (entries may be empty), instead of one SceneInstance each (#264). Without
+// it they stay SceneInstances with `emissive_overlay` set.
+std::vector<SceneInstance> scene_instances_collect(
+    const SceneFrustum* frustum = nullptr,
+    std::vector<std::shared_ptr<const ScxGeometry>>* resident_props = nullptr,
+    bool complete_character_palettes = true,
+    std::vector<SceneBatch>* night_batches = nullptr);
+// Repeated opaque props already grouped per cell. reflection_origin, in
+// render metres, drops placements that cover fewer than about four pixels
+// of a 256² reflection face.
+void scene_instances_collect_batches(const SceneFrustum* frustum,
+                                     std::vector<SceneBatch>& out,
+                                     const float* reflection_origin = nullptr);
+std::vector<SceneInstance> scene_instances_collect_root(void *root);
+// The renderer encloses one flush in this scope. Inside it, collections of
+// the active world reuse a single snapshot of its render objects instead of
+// walking and posing them again for every view (camera, shadow, reflection).
+// Nothing in a flush changes the scene graph. Pedestrian bone palettes are
+// built only for walkers inside the frustum passed to scene_instances_collect.
+void scene_instances_frame_cache(bool enabled);
+SceneSun scene_instances_light(void* root=nullptr);
+// The world's sun as the renderer lights with it (#271): elevation of the
+// light (radians, negative below the horizon), diffuse luminance, the same
+// light's luminance at noon, `direct` (diffuse / noon), whether it still casts
+// sun shadows, and the street lamp night factor derived from `direct`.
+struct SceneSunState {
+  float elevation = 0.f, diffuse = 0.f, noon = 0.f, direct = 0.f, night = 0.f;
+  bool shadowing = false;
+};
+SceneSunState scene_instances_sun_state();
+// Rejects missing parents, hidden subtrees and cycles. Draws simulated
+// bodies at their pose interpolated between physics ticks.
+bool scene_instance_transform(void *key, void *root, float *matrix);
+// Active world, unreflected script metres. False for inventory/other worlds.
+bool scene_instances_script_matrix(void *key, float *matrix);
+// The same, at the drawn pose (gameref_render_matrix). Use it for cameras,
+// shadows and anything else that must stay on the drawn car.
+bool scene_instances_render_matrix(void *key, float *matrix);
+// Render ground-shell matrix for placements owned by a GroundRef. Unlike the
+// GroundRef's own pose, this is the frame used by static map placements.
+bool scene_instances_ground_frame(void *ground, float *matrix);
+// A node's own pose (pos and ypr, or its local matrix override) relative to
+// its parent, column-major, script metres.
+void scene_instances_local_matrix(const GameRefState& node, float matrix[16]);
+// Collision mesh (object frame, metres), positive body mass and mass centre
+// of a native object type's CFG. False when the type has no collision body.
+bool scene_instances_native_body(uint32_t type, std::shared_ptr<const ScxGeometry>& mesh,
+                                 float& mass, float center[3]);
+// Positive-mass map placements are drawn as ordinary props until a vehicle
+// comes close. Queue every dormant placement overlapping a world-space box,
+// then create the loose bodies once the caller is outside its own iteration.
+void scene_instances_wake_dynamics(const float lower[3], const float upper[3]);
+void scene_instances_promote_dynamics();
+// A promoted placement goes back to being an ordinary prop. With a world frame
+// (script metres, in the world it was promoted in) its render instances and
+// wake bounds move to that pose, so a knocked-over bin stays where it settled
+// for the rest of the session; without one it reappears where it was before
+// promotion. Returns false when node is not a promoted placement.
+bool scene_instances_settle_dynamic(void* node, const float* world_frame);
+std::shared_ptr<const ScxGeometry> scene_instances_geometry(uint32_t resource);
+// Parse render meshes off the calling thread and publish them before return.
+void scene_instances_preload(const std::vector<uint32_t>& resources);
+std::string scene_instances_texture(uint32_t resource);
+// Stock flare artwork resolved through the current resource root, never cwd.
+std::string scene_instances_daylight_flare_texture();
+// Nearest mesh the ray enters, in unreflected script metres. Sky and
+// instances outside the active world are ignored. Null when the ray only
+// starts inside a volume (the garage shell around the camera).
+void *scene_instances_pick(const float origin[3], const float direction[3], float* point = nullptr);
+// The same pick, with the hit surface: the mesh drawn there, its paint slot
+// (or -1) and the hit point and face normal in the mesh's scaled local frame
+// (script metres before the render reflection), the normal facing the ray.
+struct ScenePickSurface {
+  void *key = nullptr;
+  std::shared_ptr<const ScxGeometry> geometry;
+  int paint_slot = -1;
+  float world[3] = {0.f, 0.f, 0.f};
+  float local[3] = {0.f, 0.f, 0.f};
+  float normal[3] = {0.f, 0.f, 0.f};
+  float screen_up[3] = {0.f, 1.f, 0.f};
+  // The same normal and screen up in script world space.
+  float world_normal[3] = {0.f, 0.f, 0.f};
+  float world_up[3] = {0.f, 1.f, 0.f};
+  bool mirrored = false;
+};
+bool scene_instances_pick_surface(const float origin[3], const float direction[3],
+                                  ScenePickSurface *surface);
+// Active-world meshes with a paint slot whose scaled bounds come within
+// `radius` of a world point: a stamp there also reaches neighbouring panels.
+// `inverse` maps world offsets from the matrix origin into the mesh frame.
+struct ScenePaintTarget {
+  void *key = nullptr;
+  std::shared_ptr<const ScxGeometry> geometry;
+  int paint_slot = -1;
+  float matrix[16] = {};
+  float inverse[9] = {};
+  bool mirrored = false;
+};
+std::vector<ScenePaintTarget> scene_instances_paint_targets(const float world[3], float radius);
+bool scene_instances_pointer_ray(int px, int py, int width, int height,
+                                 float origin[3], float direction[3]);
+// A typeof-1 ground tree can include render triangles, collision triangles
+// and links to exterior packages. The meshes use script metres.
+struct GroundMapData {
+  struct Placement {
+    uint32_t type = 0;
+    int32_t seed = -1;
+    std::array<float, 3> position{}, rotation{};
+  };
+  uint32_t render_id = 0;
+  std::shared_ptr<const ScxGeometry> poly, collision;
+  std::vector<uint32_t> exterior_maps;
+  std::vector<Placement> placements;
+};
+GroundMapData scene_instances_ground_map(const RpkIndex &rpk, uint32_t ground_id);
+void scene_instances_add_ground_props(const GroundMapData& map);
+// Light `render` children of the map's placements (type-13 resources, #237),
+// in the ground shell's local script space. Null when the map has none or its
+// props were not added. natives_resref attaches it to each new shell.
+SceneryLightList scene_instances_ground_lights(uint32_t render_id);
+// Drawn instead of the render object's .scx (a ground template is materials).
+void scene_instances_override_mesh(uint32_t id,
+                                   std::shared_ptr<const ScxGeometry> geo);
+void scene_instances_override_collision(uint32_t id,
+                                        std::shared_ptr<const ScxGeometry> geo);
+// Boot garage shells are drawn from the renderer preload, not as RenderRefs.
+// Their triangles stay here so a parked car can find the concrete.
+void scene_instances_add_static_mesh(const ScxGeometry &geo);
+// The boot preload belongs to the garage, not to dealer/track worlds.
+void scene_instances_enable_static_floor(bool enabled);
+// Highest surface at script (x, z) that is not above `below`. Skips the sky,
+// vehicle materials, and anything parented under `ignore` (the car).
+bool scene_instances_floor(float x, float z, float below, void *ignore,
+                           float *height);
+// Refresh once per frame; unchanged terrain keeps its spatial index.
+void scene_instances_prepare_physics();
+struct SceneSphereHit {
+  float fraction = 1.f;
+  float normal[3] = {};
+  float penetration = 0.f;
+};
+// Sweep through the indexed static scene in script metres.
+bool scene_instances_sweep_sphere(const float start[3], const float delta[3],
+                                  float radius, SceneSphereHit &hit,
+                                  float max_vertical_normal = 1.f);
+struct SceneBodyContact {
+  float normal[3] = {};
+  float point[3] = {};
+  float penetration = 0.f;
+  void* owner = nullptr;
+};
+// Full oriented chassis bounds against indexed native boxes and spheres.
+// The frame transforms local bounds to script metres; half is XYZ half size.
+bool scene_instances_contact_box(const float frame[16], const float half[3],
+                                 SceneBodyContact& contact,
+                                 const void* ignore = nullptr);
+// The same oriented box against the wall triangles (|normal.y| at most
+// max_vertical_normal) of every static triangle set the sphere sweep uses, so
+// a house corner or a fence end between the chassis corner probes still stops
+// the car. Deepest overlap wins.
+bool scene_instances_contact_walls(const float frame[16], const float half[3],
+                                   SceneBodyContact& contact,
+                                   float max_vertical_normal = .65f);
+// Part-local triangle queries. The sweep retains an earlier hit if supplied.
+bool scene_mesh_sweep_sphere(const ScxGeometry& mesh, physics::Vec3 start,
+                             physics::Vec3 movement, double radius, SceneSphereHit& hit);
+double scene_mesh_nearest(const ScxGeometry& mesh, physics::Vec3 point,
+                          physics::Vec3& closest);
+uint64_t scene_instances_floor_builds();
+// Changes whenever the world-space floor used by projected shadows changes.
+uint64_t scene_instances_floor_revision();
+struct SceneFloorHit {
+  float height = 0;
+  float normal[3] = {0, 1, 0};
+};
+// Renderer-space projection onto the sampled receiver, along the scene light.
+bool scene_shadow_projection(const float *script_frame,
+                             const SceneFloorHit &hit, float *matrix);
+// `flags` is the render-object flags word (8 casts a dynamic shadow).
+// `decal` is set when shd_texture and both axes are real.
+bool scene_shadow_info(uint32_t type_id, uint32_t *flags,
+                       SceneShadowDecal *decal);
+bool scene_instances_sample_floor(float x, float z, float below, void *ignore,
+                                  SceneFloorHit &hit);
+// One entry per mesh under `root`: x, z and the lowest vertex Y, in script
+// space (the same Y the chassis pose uses).
+bool scene_instances_supports(void *root,
+                              std::vector<std::array<float, 3>> &points);
+} // namespace slrr
