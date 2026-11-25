@@ -356,6 +356,14 @@ static const bgfx::EmbeddedShader k_vehicle[] = {
     ready_ = true;
     quit_ = false;
     video_fmv_set_hwnd(hwnd_);
+    // Make the active graphics backend visible without requiring the debug
+    // overlay. This is useful when comparing Vulkan/D3D11/OpenGL captures.
+    if (hwnd_) {
+      char backend_title[128];
+      std::snprintf(backend_title, sizeof(backend_title),
+                    "OpenSLRR - %s", bgfx::getRendererName(rt));
+      SetWindowTextA(hwnd_, backend_title);
+    }
     std::printf("[bgfx] open %dx%d GPU=libbgfx renderer=%s\n", width_, height_,
                 bgfx::getRendererName(rt));
     return true;

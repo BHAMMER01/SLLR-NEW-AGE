@@ -2896,6 +2896,54 @@ GroundMapData scene_instances_ground_map(const RpkIndex &rpk, uint32_t ground_id
                   (mats[sec.material].flags & 0x20000000u)))
       group.material_flags = 1;
     if (known) group.material_flags |= mats[sec.material].flags & 0x02000000u;
+
+    // Keep a lightweight, asset-side material/UV audit beside the executable.
+    // This is intentionally diagnostic only: authored UVs and material values
+    // are not changed here.  It lets us identify the exact ground section that
+    // produces excessive tiling or a missing/invalid texture before tuning the
+    // renderer.
+    {
+      const std::filesystem::path audit_dir =
+          std::filesystem::path(rpk.game_root()) / "perf";
+      std::error_code audit_ec;
+      std::filesystem::create_directories(audit_dir, audit_ec);
+      const auto audit_path = audit_dir / "material_audit.csv";
+      const bool new_file = !std::filesystem::exists(audit_path, audit_ec);
+      std::ofstream audit(audit_path, std::ios::app);
+      if (audit) {
+        if (new_file)
+          audit << "render_id,section,material,texture,uv0_min_u,uv0_max_u,"
+                   "uv0_min_v,uv0_max_v,uv0_valid,triangles\n";
+        float min_u = std::numeric_limits<float>::infinity();
+        float max_u = -std::numeric_limits<float>::infinity();
+        float min_v = std::numeric_limits<float>::infinity();
+        float max_v = -std::numeric_limits<float>::infinity();
+        bool valid_uv = sec.uv0.size() >= sec.pos.size() / 3u * 2u;
+        if (valid_uv) {
+          for (size_t uv = 0; uv < sec.pos.size() / 3u * 2u; uv += 2u) {
+            const float u = sec.uv0[uv], v = sec.uv0[uv + 1u];
+            if (!std::isfinite(u) || !std::isfinite(v) ||
+                std::fabs(u) > 1048576.f || std::fabs(v) > 1048576.f) {
+              valid_uv = false;
+              break;
+            }
+            min_u = std::min(min_u, u); max_u = std::max(max_u, u);
+            min_v = std::min(min_v, v); max_v = std::max(max_v, v);
+          }
+        }
+        const uint16_t tex = group.texture_index;
+        const std::string tex_name = tex < geo->textures.size()
+            ? std::filesystem::path(geo->textures[tex]).filename().string()
+            : "<missing>";
+        audit << map.render_id << ',' << (geo->groups.size()) << ','
+              << sec.material << ',' << tex_name << ','
+              << (valid_uv ? min_u : 0.f) << ','
+              << (valid_uv ? max_u : 0.f) << ','
+              << (valid_uv ? min_v : 0.f) << ','
+              << (valid_uv ? max_v : 0.f) << ','
+              << (valid_uv ? 1 : 0) << ',' << sec.indices.size() / 3u << '\n';
+      }
+    }
     const uint32_t base = static_cast<uint32_t>(geo->positions.size() / 3);
     geo->positions.insert(geo->positions.end(), sec.pos.begin(), sec.pos.end());
     geo->normals.insert(geo->normals.end(), sec.nrm.begin(), sec.nrm.end());
