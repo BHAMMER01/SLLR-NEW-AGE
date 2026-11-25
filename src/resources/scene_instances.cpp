@@ -775,6 +775,10 @@ struct GroundMat {
   int16_t lm = -1;
   uint16_t tex_channel = 0, mix_channel = 0;
   uint32_t flags = 0;
+  // Tile size in world-space metres read from the SCY material table (offset +0x24).
+  // The POLY walk file stores UV coordinates in world space; dividing by this
+  // value normalises them so one tile = 1 unit on the GPU side.
+  float tex_tile = 0.f;
 };
 
 std::vector<GroundMat>
@@ -815,6 +819,14 @@ read_ground_materials(const std::filesystem::path &path) {
     if (hsz >= 74) {
       m.tex_channel = static_cast<uint16_t>(buf[p + 70] | (buf[p + 71] << 8));
       m.mix_channel = static_cast<uint16_t>(buf[p + 72] | (buf[p + 73] << 8));
+    }
+    // Offset +0x24 holds the tile size in world-space metres that SLRR uses to
+    // normalise the POLY walk UVs (which are stored in world coordinates).
+    // A positive, finite value turns on UV scaling; zero/NaN means identity.
+    if (hsz >= 0x28) {
+      const float tile = rdf(buf.data() + p + 0x24);
+      if (std::isfinite(tile) && tile > 0.f)
+        m.tex_tile = tile;
     }
     mats.push_back(m);
     p += static_cast<size_t>(hsz) + 8;
@@ -2883,6 +2895,14 @@ GroundMapData scene_instances_ground_map(const RpkIndex &rpk, uint32_t ground_id
       group.base_map.channel = mats[sec.material].tex_channel;
       group.mix_index = mats[sec.material].mix;
       group.mix_map.channel = mats[sec.material].mix_channel;
+      // Apply the per-material tile scale so POLY UVs (world-space metres)
+      // map correctly to texture space.  scale_u/v = 1/tile normalises them:
+      // the shader multiplies the raw UV by this before sampling.
+      const float tile = mats[sec.material].tex_tile;
+      if (tile > 0.f) {
+        group.base_map.scale_u = 1.f / tile;
+        group.base_map.scale_v = 1.f / tile;
+      }
     }
     const int illumination = known ? mats[sec.material].lm : -1;
     const bool has_illumination = illumination >= 0 &&
