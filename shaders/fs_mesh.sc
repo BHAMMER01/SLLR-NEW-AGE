@@ -206,7 +206,16 @@ void main()
 	// The instanced prop path carries the placement colour here (1 elsewhere).
 	vec3 placement = v_tint.rgb;
 	if (u_alphaTest.w < -2.5) {
-		tex.rgb *= v_color0.rgb;
+		// Ground POLY keeps its authored UV scale, but a single tile repeated
+		// across the city becomes visibly synthetic. Add a low-frequency,
+		// world-space albedo variation only to this terrain path; geometry,
+		// collision and the authored macro UVs remain unchanged.
+		float groundNoiseA = cloudNoise(v_worldPos * 0.12);
+		float groundNoiseB = cloudNoise(v_worldPos * 0.42);
+		float groundVariation = mix(0.74, 1.26, mix(groundNoiseA, groundNoiseB, 0.35));
+		tex.rgb *= groundVariation;
+		if (u_alphaTest.w > -3.5)
+			tex.rgb *= v_color0.rgb;
 	} else if (u_alphaTest.w < -1.5) {
 		// ColorMixTex. A wall atlas is a flat field plus the courses in alpha.
 		// Its color channel also has a black seam, and that seam repeats as a
