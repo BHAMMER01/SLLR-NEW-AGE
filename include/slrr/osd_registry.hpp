@@ -95,6 +95,8 @@ bool osd_owner_modal(Object* owner);
 // Lowest visible owned page plate, ignoring cursor tooltip/text layers.
 int32_t osd_page_background_layer();
 bool osd_has_modal();
+// Menus (viewport layer 10) and dialogs (layer 22) need a normal pointer.
+bool osd_has_frontend_pointer_ui();
 // Viewport priority stored by Viewport.create (menu 10, dialog 22, shield 21).
 int32_t osd_viewport_pri(Object* osd);
 const std::vector<OsdWidget>& osd_widgets();

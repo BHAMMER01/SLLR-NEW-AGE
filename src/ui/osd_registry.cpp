@@ -210,6 +210,20 @@ int32_t osd_viewport_pri(Object* osd) {
 
 bool osd_has_modal() { return modal_osd() != nullptr; }
 
+bool osd_has_frontend_pointer_ui() {
+  // Gameplay HUD is below layer 10; menus start at 10 and dialogs at 20+.
+  // Only actual hit targets count, not their background plates or labels.
+  for (const OsdWidget& w : g_widgets) {
+    if (w.hidden || w.dead || w.background || w.no_hit || owner_suppressed(w) ||
+        w.layer < 10)
+      continue;
+    if (w.button || w.handler || w.event_group || w.event_source ||
+        w.string_input)
+      return true;
+  }
+  return false;
+}
+
 bool osd_owner_modal(Object* owner) {
   if (!owner) return false;
   auto fit = owner->fields.find("flags");

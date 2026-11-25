@@ -154,6 +154,9 @@ previews. Evidence is in assets/validation/map-views/{before,after}.txt.
   switching to another application releases it while leaving free-flight mode
   enabled. Returning to the game can capture the cursor again on the next
   window event.
+- Visible menu/dialog hit targets, loading screens and the host debug overlay
+  also release the clip. Escape and UI clicks resynchronize capture immediately,
+  so the cursor can operate the menu without exiting free flight.
 - Validation: Release build passed and New Age opened ValoCity in Vulkan. The
   user confirmed the mouse and wheel controls behave as intended. The
   priority-12 preview suppression is present in the city render path; final

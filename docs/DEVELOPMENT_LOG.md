@@ -239,3 +239,18 @@ press the cruise hotkey.
   focus switch; source path and Release compilation are verified.
 - Limitations: confirm windowed free flight, Alt+Tab away/back, and normal
   cursor movement after the next interactive launch.
+
+## 2026-11-25 — Give game menus the mouse during free flight
+
+- Scope: OSD interaction and free-flight cursor capture; camera movement and
+  vehicle simulation are unchanged.
+- Intent: pressing Escape or opening another pointer-driven menu while flying
+  must release the system cursor so the player can operate the interface.
+- Changes: the OSD registry now detects visible menu/dialog hit targets above
+  gameplay HUD layers. Free-flight capture yields to those controls, modal and
+  loading UI, video playback, and the debug overlay. Escape and UI click paths
+  resynchronize capture immediately; flight remains enabled behind the menu.
+- Build: `cmake --build build --config Release --target slrr_host --parallel 8`
+  completed successfully with Visual Studio 2022 Build Tools.
+- Runtime validation: Release compilation passed; the Escape/menu mouse path
+  still needs an interactive check.

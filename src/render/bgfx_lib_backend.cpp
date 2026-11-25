@@ -2632,6 +2632,11 @@ std::string map_texture_key(std::string path) {
     if (self && self->debug_overlay_.handle_message(
                     hwnd, msg, wp, lp, self->lmb_down_ || in.rmb_down)) {
       in.debug_mouse_capture = self->debug_overlay_.captures_mouse();
+      if (in.debug_mouse_capture && self->camera_cursor_clipped_) {
+        ClipCursor(nullptr);
+        self->camera_cursor_clipped_ = false;
+        if (!in.rmb_down) host_cursor_end_camera_drag();
+      }
       if (msg == WM_MOUSEMOVE) {
         self->mouse_x_ = static_cast<short>(LOWORD(lp));
         self->mouse_y_ = static_cast<short>(HIWORD(lp));
@@ -2651,21 +2656,25 @@ std::string map_texture_key(std::string path) {
       host_cursor_end_camera_drag();
     };
     const auto sync_free_camera_mouse = [&] {
-      if (!self || !self->raw_mouse_ || in.debug_mouse_capture) return;
+      if (!self || !self->raw_mouse_) return;
       // ClipCursor is process-wide. The free-flight camera may retain raw
-      // mouse look while this window owns the foreground, but must release the
-      // system cursor as soon as the user switches to another application.
+      // mouse look while this window owns the foreground and no menu or other
+      // pointer-driven UI is open. Menus must receive ordinary mouse movement.
       const bool foreground = GetForegroundWindow() == hwnd;
-      if (in.free_camera_mode && foreground && !in.rmb_down &&
-          !self->camera_cursor_clipped_) {
+      const bool pointer_ui = in.debug_mouse_capture || osd_has_modal() ||
+                              osd_has_frontend_pointer_ui() ||
+                              osd_loading_dialog() ||
+                              !osd_loading_overlay().empty() ||
+                              video_fmv_block_osd() || scene_transition_active();
+      const bool capture = in.free_camera_mode && foreground && !pointer_ui;
+      if (capture && !in.rmb_down && !self->camera_cursor_clipped_) {
         POINT cursor{};
         if (GetCursorPos(&cursor)) {
           const RECT clip{cursor.x, cursor.y, cursor.x + 1, cursor.y + 1};
           self->camera_cursor_clipped_ = ClipCursor(&clip) != FALSE;
           if (self->camera_cursor_clipped_) host_cursor_begin_camera_drag();
         }
-      } else if ((!in.free_camera_mode || !foreground) &&
-                 self->camera_cursor_clipped_ && !in.rmb_down) {
+      } else if (!capture && self->camera_cursor_clipped_ && !in.rmb_down) {
         ClipCursor(nullptr);
         self->camera_cursor_clipped_ = false;
         host_cursor_end_camera_drag();
@@ -2734,6 +2743,7 @@ std::string map_texture_key(std::string path) {
         if (!video_fmv_block_osd() && osd_cursor_button(true, x, y)) {
           self->slider_drag_index_ = -1;
           self->inventory_drag_source_ = nullptr;
+          sync_free_camera_mouse();
           return 0;
         }
         const int slider_hit=osd_hit_index(x,y);
@@ -2770,6 +2780,7 @@ std::string map_texture_key(std::string path) {
           osd_pixel_to_text(static_cast<short>(LOWORD(lp)), static_cast<short>(HIWORD(lp)),
                             self->width_, self->height_, &ux, &uy);
           if (!video_fmv_block_osd() && osd_cursor_button(false, ux, uy)) {
+            sync_free_camera_mouse();
             ReleaseCapture();
             return 0;
           }
@@ -2781,6 +2792,7 @@ std::string map_texture_key(std::string path) {
           if(!video_fmv_block_osd())osd_update_slider_at(self->slider_drag_index_,x,y);
           self->slider_drag_index_=-1;
           self->inventory_drag_source_=nullptr;
+          sync_free_camera_mouse();
           ReleaseCapture();
           return 0;
         }
@@ -2795,6 +2807,7 @@ std::string map_texture_key(std::string path) {
                             self->width_, self->height_, &x, &y);
           if (!video_fmv_block_osd() && osd_fire_inventory_drop_at(source, x, y))
             host_sfx_play(HostSfx::MenuSelect);
+          sync_free_camera_mouse();
           return 0;
         }
         self->inventory_drag_source_ = nullptr;
@@ -2813,6 +2826,7 @@ std::string map_texture_key(std::string path) {
           in.part_click_x = self->lmb_x_;
           in.part_click_y = self->lmb_y_;
         }
+        sync_free_camera_mouse();
       }
       if (msg == WM_RBUTTONUP) {
         // EC_RDRAGEND → move=0 → Garage.changePointer (mode letter).
@@ -2875,14 +2889,17 @@ std::string map_texture_key(std::string path) {
     if (msg == WM_KEYDOWN) {
       if (wp == VK_BACK) {
         osd_on_char(8);
+        sync_free_camera_mouse();
         return 0;
       }
       if (wp == VK_RETURN) {
         osd_on_char(13);
+        sync_free_camera_mouse();
         return 0;
       }
       if (wp == VK_ESCAPE) {
         osd_on_char(27);
+        sync_free_camera_mouse();
         return 0;
       }
     }
