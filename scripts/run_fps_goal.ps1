@@ -6,7 +6,8 @@ param(
   [string] $Map = 'Valocity',
   [string] $Car = 'cars/racers/Baiern.rpk:0x6',
   [string] $Renderer = 'auto',
-  [switch] $Realtime
+  [switch] $Realtime,
+  [switch] $RenderPerformance
 )
 $ErrorActionPreference = 'Stop'
 $GameRoot = (Resolve-Path -LiteralPath $GameRoot).Path
@@ -26,6 +27,7 @@ $args = @('--game','--window','--no-vsync','--root',$runRoot,
   '--spawn-car',$Car,'--bench-map',$Map,'--bench-drive',"$DriveSeconds",
   '--bench-time','13','--seed','3','--perf-log',$csv)
 if ($Realtime) { $args += '--bench-realtime' }
+if ($RenderPerformance) { $args += '--render-performance' }
 if ($Renderer -eq 'vulkan') { $args += '--renderer'; $args += 'vulkan' }
 elseif ($Renderer -ne 'auto') { throw "Renderer must be auto or vulkan" }
 $p = Start-Process -FilePath $Exe -ArgumentList $args -WorkingDirectory (Split-Path $Exe) `

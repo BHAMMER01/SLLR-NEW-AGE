@@ -54,6 +54,7 @@ struct BootOptions {
   float wind_speed = 4.f, wind_heading = 60.f;
   bool vsync = true;          // --no-vsync clears it
   bool debug_overlay = false; // --debug-overlay opens the Ctrl+F12 panel
+  bool render_performance = false; // --render-performance: visual-only preset
   RenderBackendKind render = RenderBackendKind::Bgfx;
   RenderApi render_api = RenderApi::Auto;
 };

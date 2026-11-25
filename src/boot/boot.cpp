@@ -1,6 +1,7 @@
 #include "slrr/boot.hpp"
 #include "slrr/drive_path.hpp"
 #include "slrr/frame_profiler.hpp"
+#include "../render/render_debug.hpp"
 
 #include "slrr/gameref.hpp"
 #include "slrr/host_cursor.hpp"
@@ -238,6 +239,19 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
   register_boot_natives(jvm, rpk, sections);
 
   host_game_options_load(jvm);
+  if (opt.render_performance) {
+    auto& visual = render_debug();
+    // Visual-only preset: no physics timestep, vehicle state or contact order.
+    visual.lod_bias = 1.35f;
+    visual.far_cull_px = 6.f;
+    visual.reflections = false;
+    visual.clouds = false;
+    visual.ao_resolution_scale = .5f;
+    visual.shadowed_lamps = 3;
+    visual.car_tiles = 8;
+    visual.headlight_tiles = 3;
+    std::printf("[render] performance preset enabled (visual only)\n");
+  }
   const int32_t opened = rpk.open_all();
   if (!opt.vehicle_osd.empty()) part_set_hud_preview(opt.vehicle_osd);
   part_set_wind(opt.wind_speed, opt.wind_heading);

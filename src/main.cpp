@@ -34,7 +34,7 @@ void usage() {
       "           [--bench-time HOUR] [--bench-shots DIR]\n"
       "           [--record-path FILE] [--replay-path FILE]\n"
       "           [--wind M/S[,HEADING]]\n"
-      "           [--no-vsync] [--debug-overlay] [--physics-inline]\n"
+      "           [--no-vsync] [--debug-overlay] [--render-performance] [--physics-inline]\n"
       "           [--renderer auto|vulkan]\n"
       "           [PlayerName]\n"
       "\n"
@@ -139,6 +139,10 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(a, "--debug-overlay") == 0) {
       opt.debug_overlay = true;
+      continue;
+    }
+    if (std::strcmp(a, "--render-performance") == 0) {
+      opt.render_performance = true;
       continue;
     }
     if (std::strcmp(a, "--renderer") == 0 && i + 1 < argc) {

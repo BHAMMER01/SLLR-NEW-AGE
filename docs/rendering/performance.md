@@ -20,6 +20,17 @@ cores, 470--474 MiB working set and 25--52% per-process 3D-engine utilization.
 The first loading window and isolated hitch are retained in the CSV rather than
 hidden from the summary; the stable drive stays below the 16.67 ms budget.
 
+### Optional visual performance preset
+
+`--render-performance` is an explicit, non-default visual preset. It leaves the
+fixed-step simulation, vehicle state, collision order and script timing alone,
+but increases prop LOD distance bias, raises the far-size cull threshold,
+disables reflections and volumetric clouds, lowers AO resolution and reduces
+secondary shadow-tile budgets. In a short Vulkan A/B run at 1280x720 it reached
+119.6 FPS / 8.38 ms over the last eight measured windows, compared with the
+full-quality 111 FPS / 9.02 ms stress baseline. This is a quality/performance
+option, not a claim that the full city path already sustains 200 FPS.
+
 ## Per-view light uniforms (#246)
 
 - bgfx uniform semantics (checked in the vendored source,

@@ -20,6 +20,22 @@ Copy this template for each meaningful change:
 - Limitations: known gaps, regressions or follow-up work.
 ```
 
+## 2026-11-25 — New Age keyboard defaults
+
+- Scope: script input defaults only; vehicle physics and simulation state are
+  intentionally untouched.
+- Intent: make the requested modern WASD driving layout the project default.
+- Changes: added `patch/system/Scripts/io/src/ControlSet.java` with W throttle,
+  S brake, A/D steering, Left Shift/Left Ctrl gear up/down, E clutch, N nitro,
+  H horn and P cruise control; shipped the generated `ControlSet.class` and
+  `ControlSetState.class`.
+- Build: `build/Release/compile_game_sources.exe` succeeded against a private
+  game copy (1 source, 2 classes); the installed game was not modified.
+- Runtime validation: source compilation passed. In-game key-by-key validation
+  remains pending because the game was not launched during this input-only edit.
+- Limitations: an existing saved control profile can override these defaults;
+  reset controls or create a fresh profile to observe them.
+
 ## 2026-11-25 — Initial SLRR New Age performance baseline
 
 - Scope: renderer, host audio, benchmark tooling and documentation. The later
@@ -76,3 +92,26 @@ Copy this template for each meaningful change:
   recorded above and in `docs/rendering/performance.md`.
 - Limitations: performance figures are hardware- and settings-specific; they
   are baselines, not a release guarantee.
+
+## 2026-11-25 — Optional visual performance preset
+
+- Scope: renderer options and benchmark tooling only; physics, fixed-step time,
+  vehicle state and contact ordering are intentionally untouched.
+- Intent: provide a reversible A/B path for reducing city rendering cost while
+  the default visual quality remains unchanged.
+- Changes: added `--render-performance` to the host and the FPS/monitor scripts.
+  The preset adjusts map-prop LOD/culling, reflections, clouds, AO resolution
+  and secondary shadow budgets.
+- Build: configured and built the clean Git checkout with CMake/MSVC Release;
+  `build/Release/slrr_host.exe` completed successfully. The first build also
+  rebuilt bgfx, Tint, shaderc, SDL and generated shaders.
+- Runtime validation: private ValoCity drive, Vulkan, 1280x720, no VSync. The
+  preset produced 119.6 FPS / 8.38 ms over the last eight measured windows;
+  physics remained around 3.2–4.7 ms and the log ended with
+  `section=java.game.Valocity` and `drive done`.
+- Evidence: raw files remain ignored under `build/fps-goal/`, including the
+  `fps-20261125-053037` CSV and logs.
+- Limitations: this is a short A/B sample and visibly trades distant detail and
+  effects for frame time. It is opt-in and not the default profile; visual
+  comparison and a longer stress run are still required before recommending it
+  as the standard city preset.

@@ -37,6 +37,8 @@ and project-boundary notes in [docs/PROJECT_IDENTITY.md](docs/PROJECT_IDENTITY.m
 The upstream modder documentation — natives, engine objects, and how to write a
 class, a scene, or an OSD — is published at **[eliasfd3s.github.io/openslrr](https://eliasfd3s.github.io/openslrr/)**. SLRR New Age's own engineering notes and implementation status live in this repository.
 
+The default keyboard bindings are listed in [docs/CONTROLS.md](docs/CONTROLS.md).
+
 SLRR New Age brings the game's scripts, cars, and resources into a modern,
 independent engine. It reimplements resource loading, script execution,
 rendering, the interface, audio integration and the native functions those
@@ -73,6 +75,10 @@ averaged **111 FPS / 9.02 ms per frame** after warm-up, with a 103 FPS minimum
 window and 12.83 ms maximum p95. That is a measured baseline, not a promise of
 200 FPS; reaching that level requires further render-thread and draw-submission
 work without weakening the simulation.
+
+An opt-in `--render-performance` preset is available for A/B testing. It trades
+some distant detail and secondary effects for frame time while leaving the
+simulation unchanged; it is not enabled by default.
 
 ### Validation snapshot
 
@@ -278,6 +284,11 @@ it does not download a missing dependency.
 # Baiern assembled from its scripts and configurations.
 .\build\Release\slrr_host.exe --game --spawn-car cars/racers/Baiern.rpk:0x6 --root data\game --window
 ```
+
+For an explicit visual-performance comparison, append
+`--render-performance`. This changes LOD/culling, reflections, clouds, AO and
+secondary shadow budgets only; it does not change physics or the fixed-step
+simulation.
 
 Press **Ctrl+F12** in any game section to toggle the ImGui debug panel.
 

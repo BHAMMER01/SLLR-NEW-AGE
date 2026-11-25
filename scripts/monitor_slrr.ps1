@@ -4,7 +4,8 @@ param(
   [string] $Out = (Join-Path $PSScriptRoot '..\build\monitor'),
   [int] $Seconds = 45,
   [string] $Renderer = 'vulkan',
-  [switch] $Map
+  [switch] $Map,
+  [switch] $RenderPerformance
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +25,7 @@ $args = @('--game','--window','--no-vsync','--root',$runRoot,
   '--bench-time','13','--seed','3','--perf-log',$perf)
 if ($Renderer -eq 'vulkan') { $args += @('--renderer','vulkan') }
 elseif ($Renderer -ne 'auto') { throw 'Renderer must be auto or vulkan' }
+if ($RenderPerformance) { $args += '--render-performance' }
 if (-not $Map) { $args += '--auto-cmd'; $args += 'street' }
 
 $p = Start-Process -FilePath $Exe -ArgumentList $args -WorkingDirectory (Split-Path $Exe) `
