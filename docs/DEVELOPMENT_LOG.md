@@ -223,3 +223,19 @@ press the cruise hotkey.
   separately measured.
 - Limits: test the lowest and highest levels on a long open stretch; avoid
   interpreting the configured multiplier as a measured travel speed.
+
+## 2026-11-25 — Release free-flight mouse when the game loses focus
+
+- Scope: Win32 window focus and free-flight cursor handling; camera mode and
+  vehicle simulation are unchanged.
+- Intent: prevent the system cursor from remaining clipped when the player
+  switches from the windowed game to another application.
+- Changes: the one-pixel `ClipCursor` region is now synchronized only while the
+  New Age window is foreground. Losing foreground releases the clip and ends
+  the host's camera cursor capture; returning to the game can capture it again.
+- Build: `cmake --build build --config Release --target slrr_host --parallel 8`
+  completed successfully with Visual Studio 2022 Build Tools.
+- Runtime validation: not yet repeated interactively across an application
+  focus switch; source path and Release compilation are verified.
+- Limitations: confirm windowed free flight, Alt+Tab away/back, and normal
+  cursor movement after the next interactive launch.

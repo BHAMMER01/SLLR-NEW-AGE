@@ -2652,14 +2652,20 @@ std::string map_texture_key(std::string path) {
     };
     const auto sync_free_camera_mouse = [&] {
       if (!self || !self->raw_mouse_ || in.debug_mouse_capture) return;
-      if (in.free_camera_mode && !in.rmb_down && !self->camera_cursor_clipped_) {
+      // ClipCursor is process-wide. The free-flight camera may retain raw
+      // mouse look while this window owns the foreground, but must release the
+      // system cursor as soon as the user switches to another application.
+      const bool foreground = GetForegroundWindow() == hwnd;
+      if (in.free_camera_mode && foreground && !in.rmb_down &&
+          !self->camera_cursor_clipped_) {
         POINT cursor{};
         if (GetCursorPos(&cursor)) {
           const RECT clip{cursor.x, cursor.y, cursor.x + 1, cursor.y + 1};
           self->camera_cursor_clipped_ = ClipCursor(&clip) != FALSE;
           if (self->camera_cursor_clipped_) host_cursor_begin_camera_drag();
         }
-      } else if (!in.free_camera_mode && self->camera_cursor_clipped_ && !in.rmb_down) {
+      } else if ((!in.free_camera_mode || !foreground) &&
+                 self->camera_cursor_clipped_ && !in.rmb_down) {
         ClipCursor(nullptr);
         self->camera_cursor_clipped_ = false;
         host_cursor_end_camera_drag();
