@@ -76,6 +76,20 @@ float mapped_axis(const ControllerInput& input, int axis) {
 }
 
 bool hotkey_down(const Hotkey& hotkey, const Object* controller) {
+  // A keyboard hotkey that is bound to P must be driven by the physical P
+  // transition itself.  Do not derive it from the aggregated controller axis:
+  // that axis can contain stale/virtual contributions while W/A/S/D are held,
+  // which makes edge-triggered actions (notably cruise control) toggle without
+  // the player pressing P.
+  if ((hotkey.flags & 1) && controller && controller->input) {
+    const bool p_bound = std::any_of(
+        controller->input->bindings.begin(), controller->input->bindings.end(),
+        [&](const InputBinding& binding) {
+          return binding.axis == hotkey.axis && binding.device == 0 &&
+                 binding.physical == 0x19; // DirectInput DIK_P
+        });
+    if (p_bound) return keys[0x19];
+  }
   return std::abs(hotkey.flags & 1
       ? host_input_controller_axis(controller, hotkey.axis)
       : host_input_physical_axis(0, hotkey.axis)) > .5f;
