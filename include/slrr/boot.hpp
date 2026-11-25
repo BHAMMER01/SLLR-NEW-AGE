@@ -15,6 +15,7 @@ struct BootOptions {
   bool window = false;
   bool auto_new = false;
   bool auto_city = false; // enter Valocity directly after a development spawn
+  bool auto_garage_after_city = false; // test-only return transition after city load
   bool show_boot_intros = false; // --show-intros: opt back into opening FMVs
   // After Garage: fire Garage.osdCommand (101 MAINMENU / 109 HITTHESTREET / 0=skip).
   int32_t auto_cmd = 0;

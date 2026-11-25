@@ -125,7 +125,8 @@ void host_input_clear_history() { history.clear(); }
 
 void host_input_key(int scan, bool down) {
   if (scan <= 0 || scan >= static_cast<int>(keys.size())) return;
-  if (scan == 0x1f || scan == 0x19 || scan == 0x11)
+  static const bool trace_all = std::getenv("SLRR_INPUT_TRACE") != nullptr;
+  if (trace_all || scan == 0x1f || scan == 0x19 || scan == 0x11)
     std::printf("[input-key] scan=0x%02x down=%d\n", scan, down ? 1 : 0);
   if (down && !keys[scan]) {
     pressed[scan] = true;

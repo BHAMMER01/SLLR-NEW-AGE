@@ -28,6 +28,7 @@ void usage() {
       "  slrr_host --game [--root DIR] [--window] [--no-wait] [--auto-new]\n"
       "           [--auto-cmd mainmenu|street|demo|N] [--seed N]\n"
       "           [--spawn-car cars/racers/Baiern.rpk:0x6] [--auto-city]\n"
+      "           [--auto-garage-after-city]\n"
       "           [--vehicle-osd PATH]\n"
       "           [--perf-log CSV|-] [--bench-map TRACK] [--bench-drive SECONDS]\n"
       "           [--bench-career SAVE_DIRECTORY] [--bench-realtime]\n"
@@ -109,6 +110,10 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(a, "--auto-city") == 0) {
       opt.auto_city = true;
+      continue;
+    }
+    if (std::strcmp(a, "--auto-garage-after-city") == 0) {
+      opt.auto_garage_after_city = true;
       continue;
     }
     if (std::strcmp(a, "--vehicle-osd") == 0 && i + 1 < argc) {

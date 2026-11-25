@@ -7,7 +7,8 @@ param(
   [string] $Car = 'cars/racers/Baiern.rpk:0x6',
   [string] $Renderer = 'auto',
   [switch] $Realtime,
-  [switch] $RenderPerformance
+  [switch] $RenderPerformance,
+  [switch] $PhysicsInline
 )
 $ErrorActionPreference = 'Stop'
 $GameRoot = (Resolve-Path -LiteralPath $GameRoot).Path
@@ -28,6 +29,7 @@ $args = @('--game','--window','--no-vsync','--root',$runRoot,
   '--bench-time','13','--seed','3','--perf-log',$csv)
 if ($Realtime) { $args += '--bench-realtime' }
 if ($RenderPerformance) { $args += '--render-performance' }
+if ($PhysicsInline) { $args += '--physics-inline' }
 if ($Renderer -eq 'vulkan') { $args += '--renderer'; $args += 'vulkan' }
 elseif ($Renderer -ne 'auto') { throw "Renderer must be auto or vulkan" }
 $p = Start-Process -FilePath $Exe -ArgumentList $args -WorkingDirectory (Split-Path $Exe) `

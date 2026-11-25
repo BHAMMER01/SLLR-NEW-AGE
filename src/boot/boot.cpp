@@ -252,6 +252,10 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
     visual.shadowed_lamps = 3;
     visual.car_tiles = 8;
     visual.headlight_tiles = 3;
+    // Keep the normal preset untouched; this opt-in lane also limits far
+    // scenery and shadow resolution to reduce submission/streaming pressure.
+    host_enhanced_graphics().view_distance = 1500;
+    host_enhanced_graphics().shadow_quality = 0;
     std::printf("[render] performance preset enabled (visual only)\n");
   }
   const int32_t opened = rpk.open_all();
@@ -581,6 +585,7 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
     // Development benchmark: a straight full-throttle run from the spot
     // where the player first drives an outdoor world.
     bool bench_running = false;
+    bool auto_garage_done = false;
     int bench_frames = 0;
     double bench_wall=0;bool bench_profile_started=false;
     constexpr int kBenchRate = 60;
@@ -644,6 +649,16 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
       }
       ++frames;
       if (fr.quit) break;
+      if (opt.auto_garage_after_city && !auto_garage_done && frames > 300 &&
+          sections.actual() &&
+          sections.actual()->class_name.find("Valocity") != std::string::npos &&
+          sections.garage()) {
+        auto_garage_done = true;
+        std::printf("[boot] --auto-garage-after-city returning to Garage\n");
+        sections.change_active_section(sections.garage());
+        mainloop_adopt_section(jvm, sections);
+        mainloop_sync_section_render(render, sections);
+      }
       if (!bench_map_started && sections.actual() &&
           sections.actual()->class_name.find("Garage") != std::string::npos) {
         // Same call TrackSelect makes for TAKE IT, without the menu.
@@ -676,8 +691,17 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
           track = jvm.new_object("java.game.Valocity");
           if (track) {
             std::printf("[bench] MapBox empty; using java.game.Valocity\n");
-            jvm.invoke("java.game.Valocity", "StartMap", "()V",
+            // Keep the benchmark path identical to --auto-city: constructing
+            // the object alone does not run the stock map initialization.
+            jvm.invoke("java.game.Valocity", "<init>", "()V",
                        {Value::make_obj(track)}, false);
+            // Valocity does not implement StartMap in the stock scripts.
+            // TrackSelect enters it through GameLogic.changeActiveSection;
+            // mirror that transition so the benchmark reaches the real city.
+            const Value free_ride = jvm.get_static("java.game.GameLogic", "GM_FREERIDE");
+            if (free_ride.tag == ValueTag::Int)
+              jvm.set_static("java.game.GameLogic", "gameMode", free_ride);
+            sections.change_active_section(track);
             mainloop_adopt_section(jvm, sections);
             mainloop_sync_section_render(render, sections);
           }
@@ -686,6 +710,11 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
           if (track->class_name != "java.game.Valocity") {
             std::printf("[bench] start map %s\n", track->class_name.c_str());
             jvm.invoke(track->class_name, "StartMap", "()V", {Value::make_obj(track)}, false);
+            mainloop_adopt_section(jvm, sections);
+            mainloop_sync_section_render(render, sections);
+          } else if (sections.actual() != track) {
+            // A MapBox Valocity entry also needs the normal section transition.
+            sections.change_active_section(track);
             mainloop_adopt_section(jvm, sections);
             mainloop_sync_section_render(render, sections);
           }

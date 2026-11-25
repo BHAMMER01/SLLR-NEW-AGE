@@ -23,3 +23,19 @@ New Age host remaps that specific command to P while retaining S as the brake.
 
 The decompiler is an investigation dependency, not part of the game runtime.
 `-DecompilerRoot` is only needed when using the external fallback.
+
+## Dialog.class kind-2 investigation
+
+The stock `system/Scripts/render/osd/Dialog.class` still fails in the vendored
+decompiler at `CONS[5]` with an unknown constant kind `2`. A byte-level probe
+shows that kind 2 is not the ordinary 8-byte numeric constant used by the
+other parsers: it is followed by a flags word, a length-prefixed string and a
+NUL terminator. The following kind-5 entry also carries an inline string after
+its two indices. This indicates a legacy/alternate TUFA constant encoding, not
+a safe one-line alias for the existing kind-2 format.
+
+I intentionally did not change the production TUFA reader or vendor a guessed
+decoder. The attempted permissive parser did not consume the subsequent kind-5
+record correctly and was reverted. The next safe step is to obtain a second
+class with the same encoding or derive the complete record layout from the
+original VM before adding a regression fixture.

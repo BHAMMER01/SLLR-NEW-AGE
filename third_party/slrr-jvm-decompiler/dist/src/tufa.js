@@ -64,7 +64,7 @@ function parseConstants(bytes) {
             case 7:
                 values.push({ kind: 'nameAndType', name: r.u32(), descriptor: r.u32() });
                 break;
-            default: throw new Error(`CONS[${i}]: unknown constant kind`);
+            default: throw new Error(`CONS[${i}]: unknown constant kind ${kind}`);
         }
     }
     r.done();
