@@ -25,6 +25,8 @@ compile_commands.json
 !/third_party/slrr-jvm-decompiler/**
 !/third_party/research/
 !/third_party/research/README.md
+/third_party/research/*
+!/third_party/research/README.md
 
 # ==========================================
 # Compiled binaries
