@@ -43,6 +43,38 @@ Update the relevant documentation whenever a contract or responsibility changes.
 Report compilation and in-game validation separately; neither result alone
 establishes complete compatibility.
 
+## SLRR New Age evidence workflow
+
+SLRR New Age is an independent continuation of an initial OpenSLRR DX11 fork.
+Keep that project boundary and attribution intact; see
+[PROJECT_IDENTITY.md](docs/PROJECT_IDENTITY.md).
+
+Every engine change must leave an evidence trail:
+
+1. Before editing, state the subsystem, intended behavior, and whether physics,
+   scripts, rendering, audio, save data or tools are in scope.
+2. After editing, update the relevant subsystem notes and append a concise entry
+   to [DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md). Each entry records intent,
+   files changed, build/test commands, observed results, and remaining limits.
+3. Keep raw benchmark CSVs, private game copies, logs and binaries under
+   `build/` or another ignored directory. Commit the reproducible command and a
+   summarized result, not generated game data.
+4. Treat garage measurements, loading screens and headless smoke tests as
+   separate evidence from in-city gameplay. Never present them as equivalent.
+5. Do not change physics, fixed-step timing, contact ordering or vehicle state
+   while pursuing a rendering/audio/tooling optimization unless the user
+   explicitly authorizes physics work.
+6. For performance work, report frame time in milliseconds as well as FPS, and
+   include the test map, renderer, resolution, VSync state, warm-up policy and
+   sample window. Report CPU/RAM/GPU counters with their collection limits.
+7. Use focused commits. A recommended format is
+   `perf(render): short description`, `fix(audio): short description`,
+   `test(bench): short description`, or `docs: short description`.
+
+An optimization is not considered validated until the build result and the
+runtime result are both recorded. If a test is unavailable, record that gap
+instead of inferring success from source inspection.
+
 ## Branches and pull requests
 
 - Name branches `{type}/{issue_number}-short-desc`, where `type` is `feature`,

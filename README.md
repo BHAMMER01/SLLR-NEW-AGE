@@ -37,15 +37,54 @@ and project-boundary notes in [docs/PROJECT_IDENTITY.md](docs/PROJECT_IDENTITY.m
 The upstream modder documentation — natives, engine objects, and how to write a
 class, a scene, or an OSD — is published at **[eliasfd3s.github.io/openslrr](https://eliasfd3s.github.io/openslrr/)**. SLRR New Age's own engineering notes and implementation status live in this repository.
 
-Open SLRR brings the game's scripts, cars, and resources into a new engine. The project reimplements resource loading, script execution, rendering, the interface, and the native functions those scripts use.
+SLRR New Age brings the game's scripts, cars, and resources into a modern,
+independent engine. It reimplements resource loading, script execution,
+rendering, the interface, audio integration and the native functions those
+scripts use.
 
-**You can assemble a car in the garage and drive it on the Test Track.** The host runs the stock menus, catalog, showrooms and track selection. The Test Track has keyboard and SDL3 peripheral input, chase and cockpit cameras, vehicle instruments and a GPS map. The city, traffic and the full career loop are still in development.
+**You can assemble a car in the garage and drive it on the Test Track or in
+ValoCity.** The host runs the stock menus, catalog, showrooms and track
+selection. The city benchmark loads real traffic, records frame timings and
+works with the native Vulkan and Direct3D 11 renderer paths. The complete career
+loop, long-session compatibility and original-physics parity remain in
+development.
 
 Original game data is required and is not included. The reference version is **SLRR 2.2.1 MWM**; compatibility with other versions and mods is not guaranteed. This is an independent project, unaffiliated with the original game's developers or publishers.
 
 For contributors and coding agents, [Engine contract and architecture](docs/core/ENGINE_CONTRACT.md)
 documents the script/native compatibility contract, subsystem ownership, resource
 IDs, coordinate systems, lifetime rules, Enhanced rendering and validation workflow.
+
+## Current direction
+
+The current phase is **measurement-led modernization without changing the
+simulation contract**:
+
+- keep the fixed-step vehicle and collision behavior stable;
+- improve renderer submission, scene collection, LOD/culling and streaming;
+- keep Vulkan and D3D11 available through the same bgfx backend;
+- use repeatable ValoCity drives to track frame time, CPU, RAM and GPU use;
+- document every code change and runtime result in
+  [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md).
+
+The immediate performance floor is 60 FPS in the city, with 120 FPS as the
+target for the stable driving path. The latest validated Vulkan stress run
+averaged **111 FPS / 9.02 ms per frame** after warm-up, with a 103 FPS minimum
+window and 12.83 ms maximum p95. That is a measured baseline, not a promise of
+200 FPS; reaching that level requires further render-thread and draw-submission
+work without weakening the simulation.
+
+### Validation snapshot
+
+| Area | Status | Evidence |
+| --- | --- | --- |
+| Garage, menus and car assembly | Working baseline | Interactive host path |
+| ValoCity loading and drive benchmark | Validated | Vulkan, private game copy, 45 s stress run |
+| Vulkan renderer path | Validated | bgfx reports `renderer=Vulkan` |
+| D3D11 renderer path | Available | Same backend selection, separate comparison runs |
+| Frame-time/CPU/RAM/GPU monitor | Working | `scripts/monitor_slrr.ps1` |
+| Physics parity with the original game | In progress | Must be measured before claiming compatibility |
+| Full career and long-session behavior | In progress | Not yet end-to-end validated |
 
 
 ## Progress
@@ -90,7 +129,7 @@ The chart, the counts above and [native-coverage.json](assets/progress/native-co
 | Script scheduling | ✅ Cooperative Windows fiber stacks; real run/sleep/wait, isAlive, stop, suspend/resume, and frame budgets. GameType callback lists and notification routing. See [scripting/runtime.md](docs/scripting/runtime.md) |
 | VM memory | ✅ Mark/sweep garbage collection, pin/unpin and finalizers; conservative native roots. See [scripting/vm-gc.md](docs/scripting/vm-gc.md) |
 | Resources | ✅ RPK packs, SCX models, DDS mipmaps, PTX textures and CFG configurations. Packs, meshes, map objects and textures load on every CPU core |
-| Rendering | ✅ bgfx/D3D11, skydomes, sun flares, environment reflections, car shadow maps and multilayer track materials |
+| Rendering | ✅ bgfx/D3D11 and Vulkan, skydomes, sun flares, environment reflections, car shadow maps, multilayer track materials and frame-time instrumentation |
 | Interface | ✅ Menus, career dialogs, catalog, car showroom, track selection, and paint inventory |
 | Cars | ✅ Assembly from scripts and CFG files; reference Baiern with 76 parts. Showroom camera orbit, vehicle information, powertrain layout, gear ratios and dyno calculations |
 | Workshop | ✅ Point at a part to read its name, hide the body or the engine, open panels with interpolated motion and adjust tunable parts. Remove or fit attached assemblies, and drag inventory parts onto Repair/Sell. Detached suspension parts regain their rest pose in the inventory |
@@ -98,7 +137,7 @@ The chart, the counts above and [native-coverage.json](assets/progress/native-co
 | Audio and video | ✅ Effects, loops, stock Cinepak FMV audio and four streamed music playlists mixed with FMOD Core. Repeated effects and menu sounds have separate overlap limits |
 | Options | ✅ Game, Advanced Game and audio settings use `save/game/options`, writing JSON while still reading legacy SDAT saves. The patched OptionsDialog has a pedestrian density slider from 0.5 to 1.5 (an old saved value below 0.5 returns to 1.5), video presets and an advanced video page (#377). Traffic density is saved while its simulation is pending |
 | Driving | ⏳ Test Track driving with engine SFX tables, keyboard and SDL3 peripherals, stock and CFG-defined instruments, and GPS. Acceleration has been compared with stock Nonus and Einvagen telemetry, with differences remaining |
-| World and career | ⏳ City, traffic and complete career flow; vehicle purchase/save/load still need end-to-end validation |
+| World and career | ⏳ ValoCity and traffic benchmark are working; complete career flow, vehicle purchase/save/load and long-session behavior still need end-to-end validation |
 
 Engine loops use the scripts' SFX tables. Music playlists currently play in sequential order. The [roadmap](docs/scripting/natives.md#roadmap) tracks the next steps for driving, collision and damage, navigation, garage actions and platform support.
 
@@ -118,6 +157,10 @@ Engine loops use the scripts' SFX tables. Music playlists currently play in sequ
 
 Headless diagnostics cover all four music sets (muted), audio-volume save/reload and fuel-rail slider interaction through hit-testing and a modal wait. The latest tuning changes still need confirmation in normal gameplay. See [scripting/natives.md](docs/scripting/natives.md#rendering-sound-and-cursor-native-utilities) for implementation details and limits.
 
+The performance work is tracked separately in
+[rendering/performance.md](docs/rendering/performance.md), including the
+ValoCity stress baseline, frame-time zones and the known render-thread limit.
+
 ## Build
 
 ### Requirements
@@ -128,9 +171,16 @@ Headless diagnostics cover all four music sets (muted), audio-volume save/reload
 - **FMOD Studio API for Windows 2.04**, from the [FMOD downloads page](https://www.fmod.com/download). Only the Core API's x64 headers, import library and runtime are used.
 - An Internet connection while preparing and initially configuring dependencies.
 
-Open SLRR builds for Windows x64 with an MSVC-compatible compiler and uses bgfx for rendering. CMake rejects non-MSVC toolchains (including MinGW), x86 and ARM64 before adding targets. It loads the original game scripts and assets.
+SLRR New Age builds for Windows x64 with an MSVC-compatible compiler and uses
+bgfx for rendering. CMake rejects non-MSVC toolchains (including MinGW), x86
+and ARM64 before adding targets. It loads the original game scripts and assets.
 
-The original intros and the menu background are Cinepak AVI files with PCM sound, which Open SLRR decodes itself; 64-bit Windows has no Cinepak codec, and no VLC installation is needed. Other formats, such as H.264/AAC in MP4, need **VLC 3.x for Windows x64**. Open SLRR looks in the standard VideoLAN installation directory. For a custom installation, set `SLRR_VLC_DIR` to the absolute folder containing `libvlc.dll`, `libvlccore.dll`, and `plugins`.
+The original intros and the menu background are Cinepak AVI files with PCM sound,
+which SLRR New Age decodes itself; 64-bit Windows has no Cinepak codec, and no
+VLC installation is needed. Other formats, such as H.264/AAC in MP4, need
+**VLC 3.x for Windows x64**. SLRR New Age looks in the standard VideoLAN
+installation directory. For a custom installation, set `SLRR_VLC_DIR` to the
+absolute folder containing `libvlc.dll`, `libvlccore.dll`, and `plugins`.
 
 ### Quick start: build and run a branch
 
@@ -146,8 +196,8 @@ The execution-policy override applies only to that PowerShell process and must
 be permitted by your organization. Replace `main` with the desired branch and
 the path with your SLRR 2.2.1 MWM installation. The helper fetches the branch
 into a separate checkout under
-`%LOCALAPPDATA%\OpenSLRR-branch-builds`, builds Release, and launches it. Pass
-`-Workspace 'D:\OpenSLRR-builds'` to change the checkout location or
+`%LOCALAPPDATA%\SLRR-New-Age-branch-builds`, builds Release, and launches it.
+Pass `-Workspace 'D:\SLRR-New-Age-builds'` to change the checkout location or
 `-FmodSdkDir 'D:\FMOD Studio API Windows'` for a non-default FMOD SDK location.
 `-ToolsCacheDir` enables the shared shader tool cache. Existing CMake cache
 settings persist between runs. The helper uses the bgfx.cmake pin and build/launch

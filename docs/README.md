@@ -4,6 +4,11 @@ Start with [AGENTS.md](../AGENTS.md) for the working rules, then
 [core/ENGINE_CONTRACT.md](core/ENGINE_CONTRACT.md) before changing the engine.
 Building and running are in the [README](../README.md).
 
+Project origin, attribution and the boundary between the upstream fork and the
+independent continuation are in [PROJECT_IDENTITY.md](PROJECT_IDENTITY.md).
+The chronological change and validation record is
+[DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md).
+
 Each subsystem folder holds its reference documents (contracts, formats,
 plans, audits) and a notes file of verified per-issue findings: what was
 wrong, the fix, and how it was checked. New issue notes go in the notes file
