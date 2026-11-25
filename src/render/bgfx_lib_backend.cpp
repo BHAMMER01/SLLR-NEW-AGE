@@ -1428,7 +1428,7 @@ void LibBgfxBackend::update_local_light() {
         // though the authored ceiling fixtures are present.  Preserve an
         // authored value when available, but keep a small compatibility fill.
         light.ambient[i] = std::max(
-            std::max(node->directional_light.ambient[i], 0.f) * .15f, .22f);
+            std::max(node->directional_light.ambient[i], 0.f) * .15f, .32f);
       }
       if (!light.valid())
         continue;
