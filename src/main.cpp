@@ -27,7 +27,7 @@ void usage() {
       "  slrr_host --probe-gc [--root DIR]\n"
       "  slrr_host --game [--root DIR] [--window] [--no-wait] [--auto-new]\n"
       "           [--auto-cmd mainmenu|street|demo|N] [--seed N]\n"
-      "           [--spawn-car cars/racers/Baiern.rpk:0x6]\n"
+      "           [--spawn-car cars/racers/Baiern.rpk:0x6] [--auto-city]\n"
       "           [--vehicle-osd PATH]\n"
       "           [--perf-log CSV|-] [--bench-map TRACK] [--bench-drive SECONDS]\n"
       "           [--bench-career SAVE_DIRECTORY] [--bench-realtime]\n"
@@ -106,6 +106,10 @@ int main(int argc, char** argv) {
     }
     if(std::strcmp(a,"--spawn-car")==0&&i+1<argc){
       opt.spawn_car=argv[++i];opt.auto_new=true;continue;
+    }
+    if (std::strcmp(a, "--auto-city") == 0) {
+      opt.auto_city = true;
+      continue;
     }
     if (std::strcmp(a, "--vehicle-osd") == 0 && i + 1 < argc) {
       opt.vehicle_osd = argv[++i];

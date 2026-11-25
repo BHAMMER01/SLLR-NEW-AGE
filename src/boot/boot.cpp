@@ -449,6 +449,25 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
     }
   }
 
+  // Development/test path: bypass the Garage UI and enter the installed
+  // Valocity class directly. This is deliberately opt-in; normal gameplay
+  // still follows the stock Garage -> street transition.
+  if (opt.auto_city && sections.actual()) {
+    Object* city = jvm.new_object("java.game.Valocity");
+    if (!city) {
+      std::fprintf(stderr, "[boot] FAIL --auto-city: java.game.Valocity not found\n");
+      if (render.ready()) render.close();
+      return 12;
+    }
+    jvm.invoke("java.game.Valocity", "<init>", "()V",
+               {Value::make_obj(city)}, false);
+    const Value free_ride = jvm.get_static("java.game.GameLogic", "GM_FREERIDE");
+    if (free_ride.tag == ValueTag::Int)
+      jvm.set_static("java.game.GameLogic", "gameMode", free_ride);
+    sections.change_active_section(city);
+    std::printf("[boot] --auto-city entered java.game.Valocity\n");
+  }
+
   // Garage.java creates the selected GroundRef and its RenderRef children.
   // Their meshes and collisions belong to that world, including G2/G3/ROC.
   // Do not install a permanent G1 copy in the renderer or static floor cache.
@@ -651,20 +670,20 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
           }
         }
         // Some script packs leave GameLogic.MapBox uninitialized when the
-        // development garage is entered directly.  The stock Valo City map
-        // class is still available, so instantiate it as a safe fallback.
+        // development garage is entered directly.  The installed game pack
+        // names the stock city class `Valocity` (not `ValoCity_Track`).
         if (!track && opt.bench_map.find("Valo") != std::string::npos) {
-          track = jvm.new_object("java.game.ValoCity_Track");
+          track = jvm.new_object("java.game.Valocity");
           if (track) {
-            std::printf("[bench] MapBox empty; using java.game.ValoCity_Track\n");
-            jvm.invoke("java.game.ValoCity_Track", "StartMap", "()V",
+            std::printf("[bench] MapBox empty; using java.game.Valocity\n");
+            jvm.invoke("java.game.Valocity", "StartMap", "()V",
                        {Value::make_obj(track)}, false);
             mainloop_adopt_section(jvm, sections);
             mainloop_sync_section_render(render, sections);
           }
         }
         if (track) {
-          if (track->class_name != "java.game.ValoCity_Track") {
+          if (track->class_name != "java.game.Valocity") {
             std::printf("[bench] start map %s\n", track->class_name.c_str());
             jvm.invoke(track->class_name, "StartMap", "()V", {Value::make_obj(track)}, false);
             mainloop_adopt_section(jvm, sections);

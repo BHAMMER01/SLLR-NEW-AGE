@@ -48,6 +48,7 @@ struct Hotkey {
 };
 std::vector<Hotkey> hotkeys;
 uint64_t next_hotkey = 0;
+bool brake_was_down = false;
 
 bool captures_binding(Object* focus) {
   if (!focus) return false;
@@ -76,6 +77,18 @@ float mapped_axis(const ControllerInput& input, int axis) {
 }
 
 bool hotkey_down(const Hotkey& hotkey, const Object* controller) {
+  // Track.class creates CMD_CRUISECONTROL with the physical S scan (0x1f,
+  // decimal 31). The New Age control contract assigns cruise to P instead:
+  // remap this specific cruise hotkey to P. S may produce the release edge so
+  // an active cruise is cancelled, but it can never produce a press edge.
+  if (hotkey.axis == 31)
+    return keys[0x19] && !keys[0x1f]; // DirectInput DIK_P and DIK_S
+  // Brake is a driving axis, never a toggle command.  Some legacy control
+  // profiles expose virtual/aggregated values through the hotkey axis; while
+  // S is held that value must not be allowed to create a cruise transition.
+  // The cruise command itself is still accepted from the physical P key.
+  if ((hotkey.flags & 1) && keys[0x1f] && !keys[0x19]) // DIK_S / DIK_P
+    return false;
   // A keyboard hotkey that is bound to P must be driven by the physical P
   // transition itself.  Do not derive it from the aggregated controller axis:
   // that axis can contain stale/virtual contributions while W/A/S/D are held,
@@ -112,6 +125,8 @@ void host_input_clear_history() { history.clear(); }
 
 void host_input_key(int scan, bool down) {
   if (scan <= 0 || scan >= static_cast<int>(keys.size())) return;
+  if (scan == 0x1f || scan == 0x19 || scan == 0x11)
+    std::printf("[input-key] scan=0x%02x down=%d\n", scan, down ? 1 : 0);
   if (down && !keys[scan]) {
     pressed[scan] = true;
     if (key_presses.size() == 64) key_presses.pop_front();
@@ -339,6 +354,25 @@ bool host_input_allow_ui(int id, bool pressed) {
 
 void host_input_check_hotkeys(Jvm& jvm, Object* controller, Object* focus) {
   const bool capturing = captures_binding(focus);
+  const bool brake_down = keys[0x1f];
+  if (brake_down && !brake_was_down) {
+    // Stock Vehicle.setCruiseControl(0) is the brake cancellation path. The
+    // host must call it on the physical S edge even though S is not allowed to
+    // press the cruise hotkey itself.
+    const Value player = jvm.get_static("java.game.GameLogic", "player");
+    Object* car = nullptr;
+    if (player.tag == ValueTag::Obj && player.v.o) {
+      const auto it = player.v.o->fields.find("car");
+      if (it != player.v.o->fields.end() && it->second.tag == ValueTag::Obj)
+        car = it->second.v.o;
+    }
+    if (car) {
+      jvm.invoke(car->class_name, "setCruiseControl", "(I)V",
+                 {Value::make_obj(car), Value::make_int(0)}, false);
+      std::printf("[input-cruise] brake cancel class=%s\n", car->class_name.c_str());
+    }
+  }
+  brake_was_down = brake_down;
   // Record every transition before invoking Java. A callback can display a
   // modal dialog and pump another input frame before it returns.
   std::vector<uint64_t> changed;
@@ -346,6 +380,10 @@ void host_input_check_hotkeys(Jvm& jvm, Object* controller, Object* focus) {
     const bool down = hotkey_down(hk, controller);
     if (hk.down == down) continue;
     hk.down = down;
+    if (!capturing) {
+      std::printf("[input-hotkey] axis=%d down=%d S=%d P=%d\n", hk.axis,
+                  down ? 1 : 0, keys[0x1f] ? 1 : 0, keys[0x19] ? 1 : 0);
+    }
     if (!capturing && (!hk.owner || hk.owner == focus) &&
         (hk.events & (down ? 1 : 2))) changed.push_back(hk.id);
   }

@@ -56,6 +56,10 @@ Original game data is required and is not included. The reference version is **S
 For contributors and coding agents, [Engine contract and architecture](docs/core/ENGINE_CONTRACT.md)
 documents the script/native compatibility contract, subsystem ownership, resource
 IDs, coordinate systems, lifetime rules, Enhanced rendering and validation workflow.
+When a behavior exists only in an installed TUFA class, use the project-local
+[`scripts/decompile_slrr_class.ps1`](scripts/decompile_slrr_class.ps1) wrapper
+and keep the recovered source under `build/decompiled/`; see
+[TUFA class inspection](docs/research/tufa-decompilation.md).
 
 ## Current direction
 

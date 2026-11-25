@@ -20,6 +20,28 @@ Copy this template for each meaningful change:
 - Limitations: known gaps, regressions or follow-up work.
 ```
 
+## 2026-11-25 — Cruise hotkey isolated from brake
+
+Follow-up: braking now invokes `java.game.Vehicle.setCruiseControl(0)` on the
+physical S down edge, so an active cruise is cancelled without allowing S to
+press the cruise hotkey.
+
+- Scope: host keyboard hotkey dispatch; vehicle physics and renderer untouched.
+- Intent: pressing S while driving must not toggle cruise control; only P may
+  generate the cruise transition.
+- Changes: `src/platform/host_input.cpp` now evaluates the shipped cruise
+  virtual axis 31 from the physical DirectInput P scan (`0x19`) instead of the
+  aggregated controller axis. The direct city launch and input procedure are
+  documented in `docs/TESTING.md` and `AGENTS.md`.
+- Build: MSBuild Release x64 completed successfully and produced
+  `build/Release/slrr_host.exe`.
+- Runtime validation: direct `--auto-city --renderer vulkan` reached
+  `java.game.Valocity`. The W/S test produced no cruise-down transition with
+  `S=1, P=0`; transitions were observed only when `P=1`.
+- Evidence: `build/cruise-input-20261125-062538.out.log`.
+- Limitations: the automated input harness uses window messages; physical
+  hardware bindings still need a manual confirmation.
+
 ## 2026-11-25 — New Age keyboard defaults
 
 - Scope: script input defaults only; vehicle physics and simulation state are

@@ -43,6 +43,13 @@ Update the relevant documentation whenever a contract or responsibility changes.
 Report compilation and in-game validation separately; neither result alone
 establishes complete compatibility.
 
+For missing Java source behavior, inspect the installed TUFA class before
+changing the host. Use `scripts/decompile_slrr_class.ps1` with the sibling
+`SLRR_rev-main` decompiler and keep generated `.java`/`.ir` files under
+`build/decompiled/`. Do not treat SLRR_rev's browser physics or WebGL viewer as
+the New Age runtime; reuse its TUFA, class-report and asset-audit knowledge at
+the tool/documentation boundary.
+
 ## SLRR New Age evidence workflow
 
 SLRR New Age is an independent continuation of an initial OpenSLRR DX11 fork.
@@ -74,6 +81,34 @@ Every engine change must leave an evidence trail:
 An optimization is not considered validated until the build result and the
 runtime result are both recorded. If a test is unavailable, record that gap
 instead of inferring success from source inspection.
+
+## Launching the game for manual tests
+
+Use the SLRR New Age executable in `build/Release/slrr_host.exe` and pass the
+installed game directory explicitly with `--root`. Do not launch the original
+game executable for testing the host.
+
+Open directly in the garage with the test Baiern:
+
+```powershell
+& .\build\Release\slrr_host.exe --game --window --no-vsync `
+  --root "C:\games\SLRROPENCLEAN\SLRR-NEWAGE\Street Legal Racing - Redline" `
+  --spawn-car cars/racers/Baiern.rpk:0x6 --renderer vulkan
+```
+
+Open directly in ValoCity with the same car by adding `--auto-city`:
+
+```powershell
+& .\build\Release\slrr_host.exe --game --window --no-vsync `
+  --root "C:\games\SLRROPENCLEAN\SLRR-NEWAGE\Street Legal Racing - Redline" `
+  --spawn-car cars/racers/Baiern.rpk:0x6 --auto-city --renderer vulkan
+```
+
+Confirm the startup location from the host log: garage startup prints
+`[section] enter java.game.Garage`; direct city startup prints
+`[boot] --auto-city entered java.game.Valocity`. The repeatable monitor script
+is for benchmarks and does not replace these interactive launch commands. See
+[`docs/TESTING.md`](docs/TESTING.md) for the procedure and log locations.
 
 ## Branches and pull requests
 
