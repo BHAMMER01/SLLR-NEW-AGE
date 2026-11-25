@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="assets/branding/open-slrr.png" alt="Open SLRR" width="600">
+  <img src="assets/branding/slrr-new-age-banner.png" alt="SLRR New Age" width="900">
 </p>
 
 <p align="center">
-  <strong>Rebuild the engine. Return to the garage.</strong><br>
-  A C++ reimplementation of the Street Legal Racing: Redline engine.
+  <strong>Modernize the engine. Keep the garage alive.</strong><br>
+  An independent C++ engine project for Street Legal Racing: Redline.
 </p>
 
 <p align="center">
@@ -15,13 +15,27 @@
 </p>
 
 <p align="center">
-  <a href="https://eliasfd3s.github.io/openslrr/"><strong>Documentation</strong></a> · <a href="#progress">Progress</a> · <a href="#build">Build</a> · <a href="#run">Run</a> · <a href="#sources-and-credits">Sources and credits</a>
+  <a href="docs/PROJECT_IDENTITY.md"><strong>Project identity</strong></a> · <a href="#progress">Progress</a> · <a href="#build">Build</a> · <a href="#run">Run</a> · <a href="#sources-and-credits">Sources and credits</a>
 </p>
 
 ---
+## Project identity
+
+SLRR New Age began from an OpenSLRR DX11 fork and the technical foundation made
+available by the OpenSLRR project. That origin is part of the project's history,
+and the original authors and upstream references remain credited below.
+
+It is no longer presented as the OpenSLRR project itself. SLRR New Age is an
+independent continuation with its own name, repository, roadmap, rendering
+backend work, performance changes, diagnostics and compatibility decisions.
+The relationship is best described as **inspired by and initially forked from
+OpenSLRR**, not as ownership of the upstream project. See the full attribution
+and project-boundary notes in [docs/PROJECT_IDENTITY.md](docs/PROJECT_IDENTITY.md).
+
 ## Documentation
 
-The modder documentation — natives, engine objects, and how to write a class, a scene, or an OSD — is published at **[eliasfd3s.github.io/openslrr](https://eliasfd3s.github.io/openslrr/)**.
+The upstream modder documentation — natives, engine objects, and how to write a
+class, a scene, or an OSD — is published at **[eliasfd3s.github.io/openslrr](https://eliasfd3s.github.io/openslrr/)**. SLRR New Age's own engineering notes and implementation status live in this repository.
 
 Open SLRR brings the game's scripts, cars, and resources into a new engine. The project reimplements resource loading, script execution, rendering, the interface, and the native functions those scripts use.
 
@@ -38,10 +52,10 @@ IDs, coordinate systems, lifetime rules, Enhanced rendering and validation workf
 
 These milestones describe existing functionality, rather than a percentage of the game completed.
 
-### Development videos
+### Historical upstream references
 
-- [OpenSLRR DX11 x64 — Video 1](https://www.youtube.com/watch?v=g7GCU0DrdKI)
-- [OpenSLRR DX11 x64 — Video 2](https://www.youtube.com/watch?v=4pkLV2srGMs)
+- [OpenSLRR DX11 x64 — Video 1](https://www.youtube.com/watch?v=g7GCU0DrdKI) — upstream reference
+- [OpenSLRR DX11 x64 — Video 2](https://www.youtube.com/watch?v=4pkLV2srGMs) — upstream reference
 
 ### Native bindings
 
@@ -123,8 +137,8 @@ The original intros and the menu background are Cinepak AVI files with PCM sound
 With the requirements above installed, clone this repository, then run in PowerShell:
 
 ```powershell
-git clone https://github.com/EliasFD3S/openslrr.git
-cd openslrr
+git clone https://github.com/BHAMMER01/SLLR-NEW-AGE.git
+cd SLLR-NEW-AGE
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-run-branch.ps1 -Branch main -GameRoot 'D:\Games\SLRR'
 ```
 
@@ -147,8 +161,8 @@ use separate copies if running branches concurrently or to protect existing save
 In PowerShell:
 
 ```powershell
-git clone https://github.com/EliasFD3S/openslrr.git
-cd openslrr
+git clone https://github.com/BHAMMER01/SLLR-NEW-AGE.git
+cd SLLR-NEW-AGE
 
 git clone https://github.com/bkaradzic/bgfx.cmake.git third_party/bgfx.cmake
 git -C third_party/bgfx.cmake checkout 5ea74ee66662daef4089695846d6322da0dde94e
@@ -340,6 +354,7 @@ The project draws on community research to understand SLRR's formats and behavio
 
 | Source | Contribution |
 | --- | --- |
+| [OpenSLRR](https://github.com/EliasFD3S/openslrr/) | Initial DX11 fork/reference foundation; upstream project and authors remain credited, while SLRR New Age is developed independently |
 | [SLRR-JVM-decompiler](https://github.com/nedobylskiy/SLRR-JVM-decompiler) | TUFA class format and script instructions |
 | [SLRR-JVM-compiler](https://github.com/nedobylskiy/SLRR-JVM-compiler) | Writing and regenerating TUFA classes |
 | [SLRR-JVM](https://github.com/nedobylskiy/SLRR-JVM) | Reference for the scripting language and native functions |
@@ -359,7 +374,8 @@ To explore the code: `src/jvm/` runs scripts, `src/resources/` loads data, `src/
 
 ## License
 
-OpenSLRR's original code is licensed under the [MIT License](LICENSE).
-Third-party components retain their respective licenses and copyright notices,
+Code in SLRR New Age is licensed under the [MIT License](LICENSE), subject to
+the attribution and third-party notices above. Third-party components retain
+their respective licenses and copyright notices,
 including the vendored [SLRR script compiler](third_party/slrrc/LICENSE).
 Original SLRR game assets and scripts are not covered by this license.
