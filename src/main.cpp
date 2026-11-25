@@ -36,7 +36,7 @@ void usage() {
       "           [--record-path FILE] [--replay-path FILE]\n"
       "           [--wind M/S[,HEADING]]\n"
       "           [--no-vsync] [--debug-overlay] [--render-performance] [--physics-inline]\n"
-      "           [--renderer auto|vulkan] [--show-intros]\n"
+      "           [--renderer auto|vulkan|d3d11|d3d12|opengl] [--show-intros]\n"
       "           [PlayerName]\n"
       "\n"
       "Default --game skips the legacy FMV intros → Init(int) (Soft splash / menu).\n"
@@ -162,8 +162,12 @@ int main(int argc, char** argv) {
       const char* api = argv[++i];
       if (std::strcmp(api, "auto") == 0) opt.render_api = RenderApi::Auto;
       else if (std::strcmp(api, "vulkan") == 0) opt.render_api = RenderApi::Vulkan;
+      else if (std::strcmp(api, "d3d11") == 0) opt.render_api = RenderApi::D3D11;
+      else if (std::strcmp(api, "d3d12") == 0) opt.render_api = RenderApi::D3D12;
+      else if (std::strcmp(api, "opengl") == 0 || std::strcmp(api, "gl") == 0)
+        opt.render_api = RenderApi::OpenGL;
       else {
-        std::fprintf(stderr, "unknown renderer: %s (expected auto or vulkan)\n", api);
+        std::fprintf(stderr, "unknown renderer: %s (expected auto, vulkan, d3d11, d3d12 or opengl)\n", api);
         return 1;
       }
       continue;

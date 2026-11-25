@@ -49,6 +49,7 @@ struct Hotkey {
 std::vector<Hotkey> hotkeys;
 uint64_t next_hotkey = 0;
 bool brake_was_down = false;
+bool jack_was_down = false;
 
 bool captures_binding(Object* focus) {
   if (!focus) return false;
@@ -355,6 +356,20 @@ bool host_input_allow_ui(int id, bool pressed) {
 
 void host_input_check_hotkeys(Jvm& jvm, Object* controller, Object* focus) {
   const bool capturing = captures_binding(focus);
+  // Native test bridge for the Brazilian/MW_Mod garage jack.  The patched
+  // Garage.java owns the full animation, sound and mass-limit state machine;
+  // this edge lets us exercise CMD_JACK even when its legacy OSD icon has no
+  // usable screen hitbox in a modern viewport.
+  const bool jack_down = keys[0x24]; // physical J scan code
+  if (!capturing && jack_down && !jack_was_down) {
+    const Value garage = jvm.get_static("java.game.GameLogic", "garage");
+    if (garage.tag == ValueTag::Obj && garage.v.o) {
+      jvm.invoke(garage.v.o->class_name, "osdCommand", "(I)V",
+                 {Value::make_obj(garage.v.o), Value::make_int(137)}, false);
+      std::printf("[input-jack] Garage.osdCommand(137)\n");
+    }
+  }
+  jack_was_down = jack_down;
   const bool brake_down = keys[0x1f];
   if (brake_down && !brake_was_down) {
     // Stock Vehicle.setCruiseControl(0) is the brake cancellation path. The

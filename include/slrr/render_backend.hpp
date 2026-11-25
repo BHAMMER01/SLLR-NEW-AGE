@@ -36,7 +36,8 @@ class IRenderBackend {
 };
 
 enum class RenderBackendKind { Null, D3D9, Bgfx };
-enum class RenderApi { Auto, Vulkan };
+// Explicit API selection is used for reproducible renderer A/B profiling.
+enum class RenderApi { Auto, Vulkan, D3D11, D3D12, OpenGL };
 
 std::unique_ptr<IRenderBackend> create_render_backend(RenderBackendKind kind,
                                                      RenderApi api = RenderApi::Auto);

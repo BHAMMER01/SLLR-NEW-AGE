@@ -454,6 +454,14 @@ PartConfig parse_part_config(const std::string &source,
         }
         out.bodies.push_back(body);
         out.mass += body.mass;
+      } else if (command == "damage" && t.size() >= 2) {
+        const float value = number(t, 1);
+        if (std::isfinite(value) && value >= 0.f) out.damage = value;
+        else out.unknown.push_back(raw);
+      } else if (command == "intdamage" && t.size() >= 2) {
+        const float value = number(t, 1);
+        if (std::isfinite(value) && value >= 0.f) out.internal_damage = value;
+        else out.unknown.push_back(raw);
       } else if (command == "wing") {
         // EXE sscanf "%d %f..." (0x4443C0): the values after the first one
         // that fails keep their defaults, so a malformed line never

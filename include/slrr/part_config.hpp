@@ -23,6 +23,12 @@ enum class PartBodyShape : uint8_t {
 struct PartBody {
   PartPose pose;
   float mass = 0;
+  // Optional stock CFG durability metadata.  These are authored by the
+  // Brazilian DestructionTools parts (damage/intdamage); keeping them in the
+  // parsed part makes the values available to damage policy without treating
+  // unknown legacy lines as parser errors.
+  float damage = 0.f;
+  float internal_damage = 0.f;
   PartBodyShape shape = PartBodyShape::None;
   std::array<float, 3> box_half{};
   float sphere_radius = 0.f;
@@ -133,6 +139,9 @@ struct PartConfig {
   std::string name;
   int category = 0;
   float mass = 0;
+  // Optional stock CFG durability metadata (damage/intdamage).
+  float damage = 0.f;
+  float internal_damage = 0.f;
   std::vector<PartBody> bodies;
   // At most 16, the EXE's per-part capacity.
   std::vector<PartWing> wings;

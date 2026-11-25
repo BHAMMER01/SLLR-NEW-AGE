@@ -47,6 +47,34 @@ void start_init(Jvm& jvm);
 
 namespace {
 
+void apply_garage_overlay(const std::string& game_root) {
+  const char* source = std::getenv("SLRR_GARAGE_OVERLAY");
+  if (!source || !*source) return;
+  std::error_code ec;
+  const std::filesystem::path src(source);
+  const auto dst = std::filesystem::path(game_root) / "misc" / "garage";
+  if (!std::filesystem::is_directory(src, ec) || ec) {
+    std::fprintf(stderr, "[garage] overlay not found: %s\n", source);
+    return;
+  }
+  std::filesystem::create_directories(dst, ec);
+  if (ec) { std::fprintf(stderr, "[garage] cannot create overlay target: %s\n", ec.message().c_str()); return; }
+  size_t copied = 0;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(src, ec)) {
+    if (ec) break;
+    if (!entry.is_regular_file()) continue;
+    const auto rel = std::filesystem::relative(entry.path(), src, ec);
+    if (ec) break;
+    const auto target = dst / rel;
+    std::filesystem::create_directories(target.parent_path(), ec);
+    if (ec) break;
+    std::filesystem::copy_file(entry.path(), target,
+                               std::filesystem::copy_options::overwrite_existing, ec);
+    if (!ec) ++copied;
+  }
+  std::printf("[garage] overlay=%s copied=%zu\n", source, copied);
+}
+
 int run_tree_smokes(Jvm& jvm, SectionMachine& sections) {
   if (!jvm.load_class("java.lang.System")) return 4;
   if (!jvm.load_class("java.lang.Object")) return 4;
@@ -234,6 +262,7 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
   host_cursor_set_search_roots(opt.game_root);
   slrr_font_set_game_root(opt.game_root);
   video_fmv_set_game_root(opt.game_root);
+  apply_garage_overlay(opt.game_root);
 
   RpkIndex rpk;
   rpk.set_root(opt.game_root);

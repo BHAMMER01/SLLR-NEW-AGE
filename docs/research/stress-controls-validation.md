@@ -108,3 +108,22 @@ telemetry does not yet expose per-wheel detachment state. Therefore the manual
 wheel loss is recorded as a reproducible route scenario, not yet as a proven
 physics defect. The next instrumentation step is to emit wheel/axle health and
 attachment state each physics frame and compare it against this replay.
+
+### Wheel-release diagnostic hook
+
+That instrumentation is now present behind `SLRR_WHEEL_TRACE=1`. The native
+wheel-mount release paths report corner index, release reason (`travel` or
+`impact`), impact energy/speed, and remaining mount condition. A 20-second
+Vulkan city smoke run with tracing enabled completed with exit code 0 at
+111.01 FPS and emitted no release event, so the ordinary benchmark path did
+not lose a wheel. The recorded manual route remains the next input for a
+longer traced replay; this separates a true mount failure from a visual or
+script-side wheel disappearance.
+
+The longer traced replay completed at 112.06 FPS (8.99 ms average frame,
+5.18 ms flush, 7.25 ms GPU) and emitted **zero** `[wheel-trace]` release
+events. Because the drive-path format stores chassis transforms rather than
+the complete input, damage and part-attachment history, this does not replay
+the manual wheel failure itself. It does establish that the recorded route is
+stable under deterministic replay and that the mount-release code did not
+trigger from the replayed transforms alone.

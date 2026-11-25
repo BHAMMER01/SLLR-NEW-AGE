@@ -168,8 +168,13 @@ static const bgfx::EmbeddedShader k_vehicle[] = {
     }
 
     bgfx::Init init;
-    init.type = api_ == RenderApi::Vulkan ? bgfx::RendererType::Vulkan
-                                         : bgfx::RendererType::Count;
+    switch (api_) {
+      case RenderApi::Vulkan: init.type = bgfx::RendererType::Vulkan; break;
+      case RenderApi::D3D11: init.type = bgfx::RendererType::Direct3D11; break;
+      case RenderApi::D3D12: init.type = bgfx::RendererType::Direct3D12; break;
+      case RenderApi::OpenGL: init.type = bgfx::RendererType::OpenGL; break;
+      case RenderApi::Auto: init.type = bgfx::RendererType::Count; break;
+    }
     // A day frame queues the AO prepass, car tiles, reflection faces, four
     // sun cascades and four opaque world runs (#359). With bgfx's default of
     // eight encoders (the host's included) the jobs left without one ran on

@@ -120,7 +120,9 @@ int main() try {
   for(auto root:{a,b})fs::create_directories(root/"frontend/scripts");
   pack(a/"frontend.rpk","flags 8\nTexture = first ;comment\ntexture second\n");
   pack(b/"frontend.rpk","flags 16\ntexture other\n");
-  std::ofstream(a/"frontend/scripts/page.cfg")<<"render 0x004c\nname RootA\neof\n";
+  // Proofix found real SLRR CFGs without a final newline. getline must still
+  // parse the final token and preserve the resource-cache regression.
+  std::ofstream(a/"frontend/scripts/page.cfg")<<"render 0x004c\nname RootA\neof";
   std::ofstream(b/"frontend/scripts/page.cfg")<<"render 0x004c\nname RootB\neof\n";
   RpkIndex index;index.set_root(a.string());auto pid=index.open_lib("frontend.rpk");
   const auto id=RpkIndex::make_full_id(pid,0x4c);

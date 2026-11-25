@@ -110,6 +110,21 @@ press the cruise hotkey.
 - Add a repeatable regression command for Vulkan and Direct3D 11 once both paths
   are measured on the same private game copy.
 
+## 2026-11-25 — Explicit renderer A/B selection
+
+- Scope: bgfx API selection and benchmark script; simulation unchanged.
+- Intent: make the renderer comparison from the Brazil workspace reproducible
+  in New Age instead of relying on the platform default.
+- Changes: `RenderApi` now accepts `auto`, `vulkan`, `d3d11`, `d3d12` and
+  `opengl`; bgfx maps those names to the corresponding renderer type; the FPS
+  harness accepts the same names.
+- Build: MSBuild Release x64 passed.
+- Runtime validation: matched 20-second ValoCity smoke runs completed at
+  Vulkan 108.42 FPS / 9.22 ms / p95 11.43 ms and D3D11 109.52 FPS / 9.13 ms /
+  p95 11.39 ms. Raw CSVs are under `build/verification/renderer-*`.
+- Limitations: this is a performance A/B only. Visual parity, D3D12/OpenGL
+  availability and a long-route comparison still require validation.
+
 ## 2026-11-25 — Public project description and scope
 
 - Scope: README, documentation navigation and project identity; no engine or

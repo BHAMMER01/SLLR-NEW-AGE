@@ -30,8 +30,8 @@ $args = @('--game','--window','--no-vsync','--root',$runRoot,
 if ($Realtime) { $args += '--bench-realtime' }
 if ($RenderPerformance) { $args += '--render-performance' }
 if ($PhysicsInline) { $args += '--physics-inline' }
-if ($Renderer -eq 'vulkan') { $args += '--renderer'; $args += 'vulkan' }
-elseif ($Renderer -ne 'auto') { throw "Renderer must be auto or vulkan" }
+if ($Renderer -in @('vulkan','d3d11','d3d12','opengl')) { $args += '--renderer'; $args += $Renderer }
+elseif ($Renderer -ne 'auto') { throw "Renderer must be auto, vulkan, d3d11, d3d12 or opengl" }
 $p = Start-Process -FilePath $Exe -ArgumentList $args -WorkingDirectory (Split-Path $Exe) `
   -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
 if (-not $p.WaitForExit(600000)) {

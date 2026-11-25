@@ -1625,8 +1625,12 @@ void settle_wheel_mounts(Record &rec, std::vector<Object *> &released) {
         std::max(0.0, corner_hardpoint_shift(rec, corner) - rec.wheel_shift_base[corner]);
     auto &condition = rec.wheel_mount[corner];
     condition = physics::wheel_mount_condition(condition, shift, 0, 0);
-    if (condition <= 0)
+    if (condition <= 0) {
+      if (std::getenv("SLRR_WHEEL_TRACE"))
+        std::printf("[wheel-trace] release corner=%zu reason=travel shift=%.6f condition=%.6f\\n",
+                    corner, shift, condition);
       corner_wheel_parts(rec, corner, released);
+    }
   }
 }
 // The exe calls Chassis.updatevariables from forceUpdate when the script
@@ -3943,7 +3947,12 @@ void damage_wheel_mounts(Record& rec, const physics::RigidBody& body,
     const auto& center = rec.config->wheels[corner].position;
     condition = physics::wheel_mount_condition(
         condition, 0, energy, std::hypot(local_hit.x - center[0], local_hit.z - center[2]));
-    if (condition <= 0) corner_wheel_parts(rec, corner, released);
+    if (condition <= 0) {
+      if (std::getenv("SLRR_WHEEL_TRACE"))
+        std::printf("[wheel-trace] release corner=%zu reason=impact energy=%.6f speed=%.6f condition=%.6f\\n",
+                    corner, energy, hit.speed, condition);
+      corner_wheel_parts(rec, corner, released);
+    }
   }
 }
 
@@ -4134,7 +4143,19 @@ void damage_chassis(Object* chassis, Record& rec, const physics::RigidBody& body
     if (speed < 2) continue;
     if (!panel) {
       const double force = part->config->mass * speed * internal / physics::VehicleDynamics::timestep;
-      part->state.tear = std::min(part->state.tear, float(std::max(0., 1 - force / 1800)));
+      // DestructionTools-authored parts may specify a per-part `damage`
+      // durability.  Values below one are intentionally more fragile (the
+      // Brazilian taillight CFGs use 0.15); absent/invalid metadata retains
+      // the New Age baseline.  Clamp the policy so malformed legacy values
+      // cannot create an indestructible or instantly exploding part.
+      const double authored = part->config->damage;
+      const double durability = std::isfinite(authored) && authored > 0.0
+          ? std::clamp(authored, 0.05, 20.0) : 1.0;
+      const double tear_loss = force / (1800.0 * durability);
+      // Accumulate impact loss across contacts; the old expression compared
+      // against a fresh one-impact value and could leave a part at the same
+      // integrity after repeated smaller hits.
+      part->state.tear = std::max(0.f, part->state.tear - float(tear_loss));
       installed.object->fields["tear"] = Value::make_float(part->state.tear);
       if (part->state.tear <= 0) released.push_back(installed.object);
       continue;
@@ -4194,6 +4215,16 @@ bool subtree_shell_bounds(Object* root, physics::Vec3& lo, physics::Vec3& hi) {
 
 void detach_panel(Object* part, Record& rec, Object* chassis, Record& vehicle) {
   using physics::Vec3;
+  if (std::getenv("SLRR_DAMAGE_TRACE")) {
+    const auto source = rec.config ? std::filesystem::path(rec.config->source).stem().string()
+                                   : std::string("unknown");
+    std::printf("[damage-trace] detach part=%s resource=0x%08x tear=%.6f damage=%.6f intdamage=%.6f mass=%.3f\n",
+                source.c_str(), rec.state.resource, rec.state.tear,
+                rec.config ? rec.config->damage : 0.f,
+                rec.config ? rec.config->internal_damage : 0.f,
+                rec.config ? rec.config->mass : 0.f);
+    std::fflush(stdout);
+  }
   const auto* chassis_node = gameref_get(chassis);
   auto* node = gameref_get(part);
   PartMatrix frame, parent_frame;
