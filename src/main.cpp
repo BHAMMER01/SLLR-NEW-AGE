@@ -35,11 +35,11 @@ void usage() {
       "           [--record-path FILE] [--replay-path FILE]\n"
       "           [--wind M/S[,HEADING]]\n"
       "           [--no-vsync] [--debug-overlay] [--render-performance] [--physics-inline]\n"
-      "           [--renderer auto|vulkan]\n"
+      "           [--renderer auto|vulkan] [--show-intros]\n"
       "           [PlayerName]\n"
       "\n"
-      "Default --game: FMV intros → Init(int) (Soft splash / menu).\n"
-      "--auto-new skips to Garage (smoke). ESC skips boot intros.\n"
+      "Default --game skips the legacy FMV intros → Init(int) (Soft splash / menu).\n"
+      "--show-intros enables the optional legacy opening videos.\n"
       "Game data: data/game, or SLRR_GAME_ROOT / --root.\n"
       "Reference only: open-SL/repos (do not edit as product code).\n");
 }
@@ -85,6 +85,10 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(a, "--game") == 0) {
       want_game = true;
+      continue;
+    }
+    if (std::strcmp(a, "--show-intros") == 0) {
+      opt.show_boot_intros = true;
       continue;
     }
     if (std::strcmp(a, "--window") == 0) {

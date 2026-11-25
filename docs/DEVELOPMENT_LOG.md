@@ -36,6 +36,18 @@ Copy this template for each meaningful change:
 - Limitations: an existing saved control profile can override these defaults;
   reset controls or create a fresh profile to observe them.
 
+## 2026-11-25 — Skip legacy boot videos by default
+
+- Scope: boot presentation only; simulation, physics and game data are
+  unchanged.
+- Intent: remove the two legacy Activision/Invictus opening FMVs from the
+  normal New Age startup path.
+- Changes: the host now skips boot intros by default; `--show-intros` restores
+  them for compatibility/testing.
+- Build: Release `slrr_host.exe` rebuilt successfully.
+- Runtime validation: Vulkan window launch reached `java.game.SplashScreen`
+  without opening `Activision.avi` or `Invictus.avi`.
+
 ## 2026-11-25 — Initial SLRR New Age performance baseline
 
 - Scope: renderer, host audio, benchmark tooling and documentation. The later

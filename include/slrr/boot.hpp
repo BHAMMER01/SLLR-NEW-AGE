@@ -14,6 +14,7 @@ struct BootOptions {
   std::string vehicle_osd; // optional standalone gauge CFG for preview
   bool window = false;
   bool auto_new = false;
+  bool show_boot_intros = false; // --show-intros: opt back into opening FMVs
   // After Garage: fire Garage.osdCommand (101 MAINMENU / 109 HITTHESTREET / 0=skip).
   int32_t auto_cmd = 0;
   // --auto-cmd demo: from the main menu, run its DEMO command (an AI race in

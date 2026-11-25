@@ -27,9 +27,11 @@
 #include "slrr_version.h"
 
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <exception>
+#include <filesystem>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -332,12 +334,13 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
       osd_clear_widgets();
       slrr_text_clear_all();
       const int32_t cap = (opt.max_frames > 0) ? 2 : 0;
-      if(opt.spawn_car.empty()&&opt.bench_career.empty())video_fmv_play_boot_intros(cap, [&render]() {
+      if (opt.show_boot_intros && opt.spawn_car.empty() && opt.bench_career.empty())
+        video_fmv_play_boot_intros(cap, [&render]() {
         render.pump(0);
         if (render.quit_requested()) return false;
         render.flush();
         return !render.quit_requested();
-      });
+        });
       if (render.quit_requested()) {
         video_fmv_close();
         host_set_loading_present({});
@@ -376,6 +379,24 @@ int boot_game(Jvm& jvm, IRenderBackend& render, const BootOptions& opt) {
     if (want_window) {
       bgfx_set_osd_overlay(render, true);
       mainloop_sync_section_render(render, sections);
+      // Replace the stock OpeningPic plate with the New Age project banner
+      // when the runtime copy carries it. The original game data remains
+      // untouched; this only retargets the splash widget in our host.
+      const std::filesystem::path new_age_banner =
+          std::filesystem::path(opt.game_root) / "frontend" / "textures" /
+          "slrr_new_age_banner.png";
+      if (std::filesystem::exists(new_age_banner)) {
+        for (const OsdWidget& widget : osd_widgets()) {
+          std::string path = widget.icon_path;
+          for (char& c : path)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+          if (widget.background && path.find("openingpic") != std::string::npos)
+            osd_set_widget_icon(widget.id, widget.icon_id,
+                                new_age_banner.string());
+        }
+        std::printf("[branding] New Age splash banner enabled: %s\n",
+                    new_age_banner.string().c_str());
+      }
       if (render.ready()) {
         render.pump(0);
         render.flush();
