@@ -179,10 +179,10 @@ press the cruise hotkey.
   host consumes F1–F4 and suppresses their ControlSet axes; F1 toggles photo
   mode only while free flight is active. F5's rear-look action remains
   separate from the C camera cycle.
-- Build: pending after the latest input filtering change.
-- Runtime validation: earlier C routing reached all five Track modes, but
-  not every internal camera point. The latest global F1–F4 filter and dynamic
-  camera count still need interactive confirmation in the rebuilt city.
+- Build: passed with `cmake --build build --config Release --target slrr_host`.
+- Runtime: the New Age host opened ValoCity in Vulkan. The city log records C
+  transitions and F1 being consumed at the host input boundary; final manual
+  confirmation that F1 cannot reach any Track camera handler remains pending.
 - Evidence: `build/camera-controls-city.out.log`; the older run records the
   repeated C transitions. Fresh logs remain ignored under `build/`.
 - Limits: verify F1 outside/inside flight, C through each internal point and
@@ -200,10 +200,11 @@ press the cruise hotkey.
   viewport priority 12, so photo mode now skips that preview and OSD drawing.
 - Build: passed with `cmake --build build --config Release --target slrr_host`.
 - Runtime: the rebuilt New Age opened directly into ValoCity under Vulkan;
-  `build/photo-hud-city.out.log` records the city transition.
-- Limits: the minimap preview is now filtered by its viewport-12 render path;
-  visual confirmation after F1, wheel-speed adjustment, and E/Q roll direction
-  still need the user's in-game check.
+  the user confirmed mouse look works without a button. A previous run showed
+  the minimap remained visible, which led to identifying its separate
+  viewport-12 camera-preview path and filtering it in photo mode.
+- Limits: final visual confirmation that F1 hides the minimap after this fix,
+  and E/Q roll direction still need an in-game check.
 
 ## 2026-11-25 — Add discrete free-flight speed multipliers
 
@@ -214,6 +215,11 @@ press the cruise hotkey.
 - Changes: wheel detents select discrete multipliers from x0.01 through x512;
   partial wheel deltas accumulate until a full detent. The flight OSD displays
   the selected multiplier. Outside flight the wheel remains camera zoom.
-- Build: pending.
-- Runtime validation: pending in the New Age city.
-- Limits: confirm low-speed precision, high-speed travel and the HUD label.
+- Build: passed with `cmake --build build --config Release --target slrr_host`.
+- Runtime: the rebuilt New Age opened directly into ValoCity in Vulkan; the
+  running window is `OpenSLRR - Vulkan`.
+- Runtime validation: the user confirmed the wheel multipliers behave as
+  requested. Low-speed precision, maximum-speed travel and the label are not
+  separately measured.
+- Limits: test the lowest and highest levels on a long open stretch; avoid
+  interpreting the configured multiplier as a measured travel speed.

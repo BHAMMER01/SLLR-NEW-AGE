@@ -37,7 +37,13 @@ and project-boundary notes in [docs/PROJECT_IDENTITY.md](docs/PROJECT_IDENTITY.m
 The upstream modder documentation — natives, engine objects, and how to write a
 class, a scene, or an OSD — is published at **[eliasfd3s.github.io/openslrr](https://eliasfd3s.github.io/openslrr/)**. SLRR New Age's own engineering notes and implementation status live in this repository.
 
-The default keyboard bindings are listed in [docs/CONTROLS.md](docs/CONTROLS.md).
+The default keyboard bindings and New Age camera controls are listed in
+[docs/CONTROLS.md](docs/CONTROLS.md). In ValoCity, `C` cycles the Track cameras
+and `Delete` toggles the free-flight camera. While flying, mouse movement looks
+around without a button, `W/A/S/D` move, `Shift/Ctrl` change height, `E/Q` roll
+the view, and the mouse wheel selects a speed multiplier from `x0.01` to
+`x512`. `F1` toggles photo mode; the host suppresses the OSD and the separate
+minimap preview in this mode.
 
 SLRR New Age brings the game's scripts, cars, and resources into a modern,
 independent engine. It reimplements resource loading, script execution,
@@ -93,6 +99,8 @@ simulation unchanged; it is not enabled by default.
 | Vulkan renderer path | Validated | bgfx reports `renderer=Vulkan` |
 | D3D11 renderer path | Available | Same backend selection, separate comparison runs |
 | Frame-time/CPU/RAM/GPU monitor | Working | `scripts/monitor_slrr.ps1` |
+| Free-flight controls and speed levels | Implemented; wheel behavior confirmed | Release build opened in ValoCity with Vulkan; multiplier readout implemented; end points not separately measured |
+| Photo mode and minimap hiding | Implemented | OSD and separate viewport-12 map preview are both filtered; final F1 visual check remains |
 | Physics parity with the original game | In progress | Must be measured before claiming compatibility |
 | Full career and long-session behavior | In progress | Not yet end-to-end validated |
 
@@ -141,6 +149,7 @@ The chart, the counts above and [native-coverage.json](assets/progress/native-co
 | Resources | ✅ RPK packs, SCX models, DDS mipmaps, PTX textures and CFG configurations. Packs, meshes, map objects and textures load on every CPU core |
 | Rendering | ✅ bgfx/D3D11 and Vulkan, skydomes, sun flares, environment reflections, car shadow maps, multilayer track materials and frame-time instrumentation |
 | Interface | ✅ Menus, career dialogs, catalog, car showroom, track selection, and paint inventory |
+| Input and cameras | ✅ `C` Track-camera cycle, `Delete` free flight, mouse look without a button, E/Q roll, wheel speed multipliers and F1 photo mode. See [docs/CONTROLS.md](docs/CONTROLS.md) |
 | Cars | ✅ Assembly from scripts and CFG files; reference Baiern with 76 parts. Showroom camera orbit, vehicle information, powertrain layout, gear ratios and dyno calculations |
 | Workshop | ✅ Point at a part to read its name, hide the body or the engine, open panels with interpolated motion and adjust tunable parts. Remove or fit attached assemblies, and drag inventory parts onto Repair/Sell. Detached suspension parts regain their rest pose in the inventory |
 | Physics | ⏳ Fixed-step chassis, suspension and tyre contacts, differential lock, impact deformation and panel detachment. Handling and damage still need comparison with the original |
@@ -153,6 +162,13 @@ Engine loops use the scripts' SFX tables. Music playlists currently play in sequ
 
 ### Recent changes
 
+- Added a New Age free-flight camera: mouse-look capture without right-click,
+  WASD translation, Shift/Ctrl vertical movement, E/Q roll, and mouse-wheel
+  speed multipliers from x0.01 to x512 with an on-screen readout. `Delete`
+  enters/exits flight; `F1` toggles photo mode. The photo path hides both the
+  vehicle OSD and the city's separate viewport-12 minimap preview. `C` is the
+  Track camera selector; see [docs/CONTROLS.md](docs/CONTROLS.md) for the full
+  mapping and validation notes.
 - Added GPS tile textures and markers, sun flares, DDS mipmaps and the Test Track's separate diffuse and decal UV channels. The Invictus Racing 500 logo appears on the circuit.
 - Corrected the stock instrument panel's proportions and translucent background.
 - Connected gameplay options to gearbox mode, steering help, ABS, launch ASR, units, damage and cockpit movement. The stock menu selectors and sliders save their values automatically.

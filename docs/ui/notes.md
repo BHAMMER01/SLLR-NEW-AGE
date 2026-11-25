@@ -151,8 +151,10 @@ previews. Evidence is in assets/validation/map-views/{before,after}.txt.
   vehicle gauges.
 - Physics and vehicle inputs remain frozen while free flight is active.
 - Validation: Release build passed and New Age opened ValoCity in Vulkan. The
+  user confirmed the mouse and wheel controls behave as intended. The
   priority-12 preview suppression is present in the city render path; final
-  visual confirmation after F1 remains a manual in-game check.
+  visual confirmation that F1 removes the minimap remains a manual in-game
+  check. The lowest/highest speed levels were not measured separately.
 
 ### OSD plates over preview cameras (#348)
 
