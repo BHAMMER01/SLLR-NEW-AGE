@@ -954,7 +954,14 @@ static bool driving_camera_pose(GameRefState& cam, float* eye, float* at,
   // tows the eye back behind like a rope (tractrix): tan(a/2) shrinks by
   // exp(-s/r) over s metres of forward travel. This runs on every pose query,
   // including dt = 0 ones, because look_s is the last focus it saw.
-  if (cam.cam_pose_init) {
+  // A pedestrian turns to the movement direction, and that direction is taken
+  // from the camera itself; following the mesh heading would close the loop
+  // and spin the view. Peds therefore keep an explicit azimuth (mouse orbit
+  // only). Cars keep deriving it from the body.
+  const bool follows_heading = target->kind != GameRefKind::RenderRef;
+  const double target_azimuth = follows_heading
+      ? std::atan2(frame[8], frame[10]) : double(cam.follow_azimuth);
+  if (follows_heading && cam.cam_pose_init) {
     const double back = std::hypot(frame[8], frame[10]);
     const double s = back > 1e-6 ? -((frame[12] - cam.look_s[0]) * frame[8] +
                                      (frame[14] - cam.look_s[2]) * frame[10]) / back : 0.;
@@ -966,7 +973,7 @@ static bool driving_camera_pose(GameRefState& cam, float* eye, float* at,
   }
   // SLRR_rev FollowCamera keeps the car's actual translation and damps
   // the offset. This avoids camera lag when a render frame has fewer ticks.
-  const double azimuth = std::atan2(frame[8], frame[10]) + cam.orbit_yaw +
+  const double azimuth = target_azimuth + cam.orbit_yaw +
                          (cam.follow_variant == 4 ? 3.141592653589793 : 0);
   const double lift = cam.follow_variant == 4 ? 1.9 : cam.follow_variant == 3 ? 2.4 : 1.4;
   const double radius = std::hypot(distance, lift);
@@ -983,7 +990,7 @@ static bool driving_camera_pose(GameRefState& cam, float* eye, float* at,
     cam.cam_pose_init = true;
   } else if (cam.follow_hold || cam.angle_gain > 0.f) {
     cam.follow_hold = true;
-    held_follow_pose(cam, center, float(std::atan2(frame[8], frame[10])), dt);
+    held_follow_pose(cam, center, float(target_azimuth), dt);
   } else {
     const float weight = -std::expm1(-dt * (cam.follow_variant ? 9.f : 5.f));
     for (int i = 0; i < 3; ++i)

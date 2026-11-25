@@ -136,6 +136,12 @@ bool character_bone_metres(void* owner, int bone, float out[16]);
 
 void character_bind_animation(void* animation, void* render, int32_t clip_id,
                               const RpkIndex& packs);
+// Bind a host-generated loose .matrixdata clip with its target-rig .bon length
+// donor. Paths are resolved relative to the active game root unless absolute.
+bool character_bind_animation_files(void* animation, void* render,
+                                    const std::string& matrixdata_path,
+                                    const std::string& bon_path,
+                                    const RpkIndex& packs);
 void character_release_animation(void* animation);
 void character_set_speed(void* animation, float speed);
 void character_set_fade(void* animation, float fade);

@@ -72,6 +72,11 @@ struct HostInput {
   float free_camera_speed_multiplier = 1.f; // Discrete wheel-selected multiplier.
   bool free_camera_mode = false;
   bool photo_mode = false;
+  // Host-controlled player pedestrian; physical movement is independent of
+  // the game's configurable driving bindings while outside the car.
+  bool player_on_foot = false;
+  float pedestrian_x = 0.f, pedestrian_z = 0.f;
+  bool pedestrian_run = false, pedestrian_jump = false;
   bool drive_horn = false;
   float drive_nitro = 0.f;
   bool drive_reverse = false, drive_handbrake = false;

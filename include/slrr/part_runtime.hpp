@@ -137,6 +137,10 @@ void part_remove_pedestrian_type(void* ground, void* type);
 // Distance in metres from a point to the nearest live pedestrian of that
 // type id on this ground, or of any type when type_id is 0. -1 when none.
 float part_pedestrian_distance(void* ground, float x, float y, float z, int32_t type_id);
+// F toggles the controlled player between the car and a native pedestrian.
+// Exiting requires <= 3 m/s; entering requires <= 3 m from the parked car.
+bool part_toggle_player_pedestrian();
+bool part_player_pedestrian_active();
 // Map unload. Drops the seated driver and the walking crowd.
 void part_drop_actors();
 void part_pause_engine_audio(bool paused);

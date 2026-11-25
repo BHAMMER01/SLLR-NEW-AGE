@@ -124,6 +124,11 @@ struct GameRefState {
   int32_t follow_vehicle = 0;
   int cockpit_index = -1;
   int follow_variant = 0;
+  // Azimuth the chase camera keeps while following a pedestrian. The human
+  // mesh faces +Z and the player turns to the movement direction, which is
+  // itself camera relative; deriving the azimuth from that heading would make
+  // the camera chase its own yaw. Cars keep deriving it from the body.
+  float follow_azimuth = 0.f;
   bool camera_free = false, camera_autozoom = false, camera_attached = false;
   bool camera_mode_override = false;
   float camera_roll = 0.f;

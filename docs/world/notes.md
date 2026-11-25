@@ -4,6 +4,46 @@ Verified notes on map placement, garage shells, pedestrians and shared
 races, moved from the knowledge base. The traffic and race audit is in
 [traffic-races.md](traffic-races.md).
 
+## Player pedestrian: first native runtime pass
+
+The player can use F to leave the controlled car at up to 3 m/s. The host
+creates a separate RenderRef using a pedestrian type registered by the active
+GroundRef, places its feet on the sampled city floor beside the driver's side,
+and suspends the car's physics while the player walks. WASD moves relative to
+the active camera, Shift runs, Space jumps, and F returns to the parked car
+within 3 m. On return, the host removes the player actor, restores the seated
+driver and the car's prior physics-suspension state. The player actor is kept
+in the GC root set and is removed during map unload.
+
+Animation: the native walk clip plays while walking and stops when idle; no
+get-in/get-out clip is played. Exit and entry are instant swaps of the actor,
+as the game itself hides the seated driver render. The Godot
+`vehicle_get_out_a` / `vehicle_get_in_a` conversion
+(`tools/godot_glb_ped_to_matrixdata.py`,
+`scripts/generate_ped_transitions.ps1`, `build/ped-transition/<family>/`) is
+kept only as an unused asset experiment; the runtime no longer binds it.
+
+Camera: on exit the host hands the script camera's `follow_vehicle` slot from
+the car to the player actor (`anchor_onfoot_camera`) and `part_camera_pose`
+answers with the actor's world frame, so the native chase camera (distance
+spring, mouse orbit, collision sweep) follows the pedestrian. Unlike the car,
+a pedestrian must not inherit the target heading: the mesh faces +Z and the
+player turns to a camera-relative movement direction, so deriving the azimuth
+from the body would chase its own yaw (the view spun when walking forward and
+when strafing). `GameRefState::follow_azimuth` therefore holds the ped's eye
+azimuth (set behind the actor on exit) and only the mouse orbit changes it;
+the heading-derived azimuth and its tractrix tow stay car-only. Re-entry
+restores the saved camera fields (`restore_onfoot_camera`), so the slot returns
+to the controlled vehicle. `target_point` still cannot drive RenderRef nodes;
+the follow slot is the supported path.
+
+Facing: the human mesh's front is its +Z axis (`PedestrianLines::spawn` uses
+`heading = (sin yaw, cos yaw)`), while the car's front is -Z. The player yaw
+therefore uses `atan2(dx, dz)` for movement and `atan2(-car[8], -car[10])` on
+exit; using the car convention made the actor walk backwards. The mesh matrix
+itself is built like the crowd actors (`place_player_pedestrian`).
+
+
 ## Garage lifetime correction (#122)
 
 Boot no longer loads G1 meshes unconditionally into the renderer's permanent

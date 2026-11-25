@@ -45,6 +45,18 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#undef near
+#undef far
+#endif
+
 namespace slrr {
 namespace {
 // One wheel record of a chassis. getWheel hands out a fresh wrapper; the
@@ -296,6 +308,7 @@ std::unordered_map<Object*, DriverSeat> drivers;
 struct PedKind {
   uint32_t render = 0;
   uint32_t anim = 0;
+  std::string family;
   PartPose pose{};
   float sole = 0.f;
   bool ready = false;
@@ -326,6 +339,33 @@ struct PedCrowd {
   double report_at = 0;
 };
 std::unordered_map<void*, PedCrowd> crowds;
+struct OnFootCameraSave {
+  void* key = nullptr;
+  int32_t follow_vehicle = 0, move_id = 0, look_id = 0;
+  int follow_variant = 0;
+  bool aim_move = false, aim_look = false, camera_attached = false;
+  bool script_dist_set = false, cam_pose_init = false, cam_az_set = false;
+  bool follow_hold = false;
+  float move_off[3]{}, look_off[3]{};
+  float move_dist = 0.f, cam_distance = 0.f;
+  float script_dist_min = 1.f, script_dist_max = 10.f;
+  float cam_base_az = 0.f, cam_base_elev = 0.f, orbit_yaw = 0.f, orbit_pitch = 0.f;
+  float follow_azimuth = 0.f;
+  bool valid = false;
+};
+struct PlayerPedestrian {
+  Object* chassis = nullptr;
+  Object* render = nullptr;
+  Object* driver_render = nullptr;
+  PedKind kind{};
+  bool car_was_suspended = false;
+  bool driver_was_empty = false;
+  float x = 0.f, y = 0.f, z = 0.f, yaw = 0.f;
+  float vertical_speed = 0.f;
+  bool grounded = true, jump_was_down = false;
+  OnFootCameraSave camera{};
+};
+PlayerPedestrian player_ped;
 uint32_t ped_rng = 0x51ee5u;
 float ped_backlog = 0.f;
 VehicleHudLayout hud_preview;
@@ -6142,6 +6182,12 @@ void pose_driver() {
     }
   }
   if (!chassis || !runtime || !index) return;
+  if (player_ped.render && player_ped.chassis == chassis) {
+    // The seat actor remains rooted and collectible, but must not be posed or
+    // drawn while the same player is represented by the on-foot pedestrian.
+    if (auto* seated = gameref_get(player_ped.driver_render)) seated->empty = true;
+    return;
+  }
   auto* rec = record(chassis);
   if (!rec || !rec->config || !rec->config->has_seat) return;
   DriverSeat& seat = drivers[chassis];
@@ -6404,16 +6450,17 @@ std::vector<std::string> cfg_words(std::string line) {
 
 bool parse_ped_kind(uint32_t type_id, PedKind* out) {
   if (!index || !out) return false;
+  std::string relative = index->payload_prop(type_id, "native");
+  if (relative.rfind("ped ", 0) == 0 || relative.rfind("ped\t", 0) == 0)
+    relative.erase(0, 4);
+  else
+    relative = index->payload_prop(type_id, "sourcefile");
+  while (!relative.empty() && (relative.front() == ' ' || relative.front() == '\t'))
+    relative.erase(relative.begin());
+  if (!relative.empty()) out->family = std::filesystem::path(relative).stem().string();
   auto bytes = index->read_payload(type_id);
   std::string text(bytes.begin(), bytes.end());
   if (text.find("eof") == std::string::npos) {
-    std::string relative = index->payload_prop(type_id, "native");
-    if (relative.rfind("ped ", 0) == 0 || relative.rfind("ped\t", 0) == 0)
-      relative.erase(0, 4);
-    else
-      relative = index->payload_prop(type_id, "sourcefile");
-    while (!relative.empty() && (relative.front() == ' ' || relative.front() == '\t'))
-      relative.erase(relative.begin());
     if (relative.empty()) return false;
     std::ifstream file(std::filesystem::path(index->game_root()) / relative, std::ios::binary);
     if (!file) return false;
@@ -6463,6 +6510,321 @@ bool parse_ped_kind(uint32_t type_id, PedKind* out) {
                                          out->render & 0xffffu)
                    .ok;
   return out->ready;
+}
+
+namespace {
+bool bind_native_player_walk() {
+  if (!player_ped.render || !player_ped.kind.anim || !index) return false;
+  character_bind_animation(player_ped.render, player_ped.render,
+                           static_cast<int32_t>(player_ped.kind.anim), *index);
+  character_play(player_ped.render, true);
+  character_set_speed(player_ped.render, 0.f);
+  return character_duration(player_ped.render) > 0.f;
+}
+
+// The car camera follows the controlled vehicle through
+// GameRefState::follow_vehicle. Hand that same slot to the player actor while
+// on foot, so the native chase camera (azimuth behind the target, distance
+// spring, collision and mouse orbit) follows the pedestrian exactly as it
+// follows the car. restore_onfoot_camera gives the slot back to the vehicle.
+void anchor_onfoot_camera(Object* render) {
+  GameRefState* cam = fullscreen_script_camera();
+  const GameRefState* actor = gameref_get(render);
+  if (!cam || !actor || !actor->live_id) return;
+  cam->follow_vehicle = actor->live_id;
+  cam->follow_variant = 0;
+  cam->camera_attached = false;
+  cam->aim_move = cam->aim_look = false;
+  cam->cam_distance = 3.6f;
+  cam->script_dist_set = true;
+  cam->script_dist_min = 1.2f;
+  cam->script_dist_max = 6.5f;
+  cam->cam_pose_init = false;
+  cam->follow_hold = false;
+  cam->orbit_yaw = cam->orbit_pitch = 0.f;
+  // Eye behind the actor: the mesh faces +Z, so the camera sits on +pi.
+  cam->follow_azimuth = player_ped.yaw + 3.141592653589793f;
+}
+
+void save_onfoot_camera(OnFootCameraSave& save, Object* render) {
+  GameRefState* cam = fullscreen_script_camera();
+  const GameRefState* actor = gameref_get(render);
+  if (!cam || !actor || !actor->live_id || cam->camera_free) return;
+  save.key = cam->key;
+  save.follow_vehicle = cam->follow_vehicle;
+  save.move_id = cam->move_id;
+  save.look_id = cam->look_id;
+  save.follow_variant = cam->follow_variant;
+  save.aim_move = cam->aim_move;
+  save.aim_look = cam->aim_look;
+  save.camera_attached = cam->camera_attached;
+  save.script_dist_set = cam->script_dist_set;
+  save.cam_pose_init = cam->cam_pose_init;
+  save.cam_az_set = cam->cam_az_set;
+  save.follow_hold = cam->follow_hold;
+  std::copy_n(cam->move_off, 3, save.move_off);
+  std::copy_n(cam->look_off, 3, save.look_off);
+  save.move_dist = cam->move_dist;
+  save.cam_distance = cam->cam_distance;
+  save.script_dist_min = cam->script_dist_min;
+  save.script_dist_max = cam->script_dist_max;
+  save.cam_base_az = cam->cam_base_az;
+  save.cam_base_elev = cam->cam_base_elev;
+  save.orbit_yaw = cam->orbit_yaw;
+  save.orbit_pitch = cam->orbit_pitch;
+  save.follow_azimuth = cam->follow_azimuth;
+  save.valid = true;
+}
+
+void restore_onfoot_camera(OnFootCameraSave& save) {
+  if (!save.valid) return;
+  GameRefState* cam = gameref_get(save.key);
+  if (!cam) { save.valid = false; return; }
+  cam->follow_vehicle = save.follow_vehicle;
+  cam->move_id = save.move_id;
+  cam->look_id = save.look_id;
+  cam->follow_variant = save.follow_variant;
+  cam->aim_move = save.aim_move;
+  cam->aim_look = save.aim_look;
+  cam->camera_attached = save.camera_attached;
+  cam->follow_hold = save.follow_hold;
+  cam->script_dist_set = save.script_dist_set;
+  cam->cam_pose_init = save.cam_pose_init;
+  cam->cam_az_set = save.cam_az_set;
+  std::copy_n(save.move_off, 3, cam->move_off);
+  std::copy_n(save.look_off, 3, cam->look_off);
+  cam->move_dist = save.move_dist;
+  cam->cam_distance = save.cam_distance;
+  cam->script_dist_min = save.script_dist_min;
+  cam->script_dist_max = save.script_dist_max;
+  cam->cam_base_az = save.cam_base_az;
+  cam->cam_base_elev = save.cam_base_elev;
+  cam->orbit_yaw = save.orbit_yaw;
+  cam->orbit_pitch = save.orbit_pitch;
+  cam->follow_azimuth = save.follow_azimuth;
+  save.valid = false;
+  std::fprintf(stderr, "[onfoot] camera back on vehicle (follow=%d)\n",
+               cam->follow_vehicle);
+}
+
+void place_player_pedestrian() {
+  if (!player_ped.render) return;
+  auto* node = gameref_get(player_ped.render);
+  if (!node) return;
+  PartMatrix world = eye_matrix();
+  const float cy = std::cos(player_ped.yaw), sy = std::sin(player_ped.yaw);
+  world[0] = cy; world[2] = -sy; world[8] = sy; world[10] = cy;
+  world[12] = player_ped.x;
+  world[13] = player_ped.y - player_ped.kind.sole;
+  world[14] = player_ped.z;
+  PartMatrix parent;
+  const bool rooted = node->parent && scene_instances_script_matrix(node->parent, parent.data());
+  const PartMatrix local = rooted ? part_matrix_multiply(part_matrix_inverse_rigid(parent), world)
+                                  : world;
+  std::copy(local.begin(), local.end(), node->local_matrix);
+  node->matrix_override = true;
+  node->empty = false;
+}
+
+void leave_player_pedestrian() {
+  if (!player_ped.render) return;
+  auto* rec = record(player_ped.chassis);
+  if (auto* driver = gameref_get(player_ped.driver_render))
+    driver->empty = player_ped.driver_was_empty;
+  if (rec) rec->physics_suspended = player_ped.car_was_suspended;
+  restore_onfoot_camera(player_ped.camera);
+  gameref_remove(player_ped.render);
+  player_ped = {};
+  host_input().player_on_foot = false;
+  std::fprintf(stderr, "[onfoot] returned to controlled car\n");
+}
+
+void tick_player_pedestrian(double seconds) {
+  if (!player_ped.render || !player_ped.chassis || !runtime || !index) return;
+  auto* node = gameref_get(player_ped.render);
+  auto* rec = record(player_ped.chassis);
+  if (!node || !rec) { leave_player_pedestrian(); return; }
+  const float dt = static_cast<float>(std::clamp(seconds, 0.0, 0.05));
+  auto& input = host_input();
+  float x = std::clamp(input.pedestrian_x, -1.f, 1.f);
+  float z = std::clamp(input.pedestrian_z, -1.f, 1.f);
+  const float input_len = std::hypot(x, z);
+  if (input_len > 1.f) { x /= input_len; z /= input_len; }
+  // The camera yaw looks down -Z; the human mesh faces +Z, so its stored yaw
+  // is the camera convention plus pi (see PedestrianLines::spawn: heading =
+  // (sin yaw, cos yaw)).
+  float yaw = player_ped.yaw + 3.141592653589793f;
+  if (GameRefState* cam = fullscreen_script_camera()) yaw = cam->ypr[0];
+  const float fx = -std::sin(yaw), fz = -std::cos(yaw);
+  const float rx = std::cos(yaw), rz = -std::sin(yaw);
+  float dx = rx * x + fx * z;
+  float dz = rz * x + fz * z;
+  const float length = std::hypot(dx, dz);
+  if (length > 1.f) { dx /= length; dz /= length; }
+  const float speed = input.pedestrian_run ? 5.2f : 2.4f;
+  dx *= speed * dt; dz *= speed * dt;
+  if (std::fabs(dx) + std::fabs(dz) > 1e-6f) {
+    float start[3] = {player_ped.x, player_ped.y + 0.55f, player_ped.z};
+    float delta[3] = {dx, 0.f, dz};
+    SceneSphereHit wall;
+    if (scene_instances_sweep_sphere(start, delta, 0.24f, wall, .65f)) {
+      const float f = std::max(0.f, wall.fraction - 0.002f);
+      dx *= f; dz *= f;
+    }
+    player_ped.x += dx;
+    player_ped.z += dz;
+    player_ped.yaw = std::atan2(dx, dz);
+  }
+  const bool jump = input.pedestrian_jump;
+  if (jump && !player_ped.jump_was_down && player_ped.grounded) {
+    player_ped.vertical_speed = 5.f;
+    player_ped.grounded = false;
+  }
+  player_ped.jump_was_down = jump;
+  player_ped.vertical_speed -= 22.f * dt;
+  player_ped.y += player_ped.vertical_speed * dt;
+  SceneFloorHit floor;
+  if (scene_instances_sample_floor(player_ped.x, player_ped.z,
+                                   player_ped.y + .12f, player_ped.chassis, floor) &&
+      player_ped.y <= floor.height) {
+    player_ped.y = floor.height;
+    player_ped.vertical_speed = 0.f;
+    player_ped.grounded = true;
+  } else {
+    player_ped.grounded = false;
+  }
+  if (player_ped.kind.anim) {
+    const float gait = length > 1e-3f && dt > 0.f
+        ? (input.pedestrian_run ? 1.65f : 1.f) : 0.f;
+    character_set_speed(player_ped.render, gait);
+  }
+  place_player_pedestrian();
+  if (std::getenv("SLRR_ONFOOT_TRACE")) {
+    static double trace_at = 0.0;
+    trace_at += dt;
+    if (trace_at >= 1.0) {
+      trace_at = 0.0;
+      const GameRefState* cam = fullscreen_script_camera();
+      const auto* actor = gameref_get(player_ped.render);
+      const float dx = cam ? cam->pos[0] - player_ped.x : 0.f;
+      const float dy = cam ? cam->pos[1] - player_ped.y : 0.f;
+      const float dz = cam ? cam->pos[2] - player_ped.z : 0.f;
+      std::fprintf(stderr,
+                   "[onfoot-trace] follow=%d actor=%d eye=(%.2f,%.2f,%.2f) "
+                   "ped=(%.2f,%.2f,%.2f) distance=%.2f camyaw=%.2f pedyaw=%.2f "
+                   "input=(%.0f,%.0f run=%d)\n",
+                   cam ? cam->follow_vehicle : 0, actor ? actor->live_id : 0,
+                   cam ? cam->pos[0] : 0.f, cam ? cam->pos[1] : 0.f,
+                   cam ? cam->pos[2] : 0.f, player_ped.x, player_ped.y,
+                   player_ped.z, std::sqrt(dx * dx + dy * dy + dz * dz),
+                   cam ? cam->ypr[0] : 0.f, player_ped.yaw,
+                   input.pedestrian_x, input.pedestrian_z,
+                   input.pedestrian_run ? 1 : 0);
+    }
+  }
+}
+}  // namespace
+
+bool player_pedestrian_active_impl() { return player_ped.render != nullptr; }
+
+bool toggle_player_pedestrian_impl() {
+  if (player_ped.render) {
+    const auto* car = gameref_get(player_ped.chassis);
+    PartMatrix car_frame{};
+    if (!car || !scene_instances_script_matrix(player_ped.chassis, car_frame.data())) return false;
+    const float distance = std::sqrt(std::pow(player_ped.x - car_frame[12], 2.f) +
+                                     std::pow(player_ped.y - car_frame[13], 2.f) +
+                                     std::pow(player_ped.z - car_frame[14], 2.f));
+    if (distance > 3.f) {
+      std::fprintf(stderr, "[onfoot] too far from car to enter (%.2f m)\n", distance);
+      return false;
+    }
+    // Back to the car: the actor disappears and the camera returns to the
+    // controlled vehicle. No Godot get-in/get-out clip is played.
+    leave_player_pedestrian();
+    return true;
+  }
+  Object* chassis = part_controlled_chassis();
+  auto* rec = record(chassis);
+  if (!chassis || !rec || !rec->config || !index || !runtime ||
+      host_input().free_camera_mode) return false;
+  const double speed = std::sqrt(rec->dynamics.body.velocity.x * rec->dynamics.body.velocity.x +
+                                 rec->dynamics.body.velocity.z * rec->dynamics.body.velocity.z);
+  if (speed > 3.0) {
+    std::fprintf(stderr, "[onfoot] exit blocked: %.2f m/s (limit 3.00)\n", speed);
+    return false;
+  }
+  PedKind kind;
+  bool found_kind = false;
+  for (auto& entry : crowds) {
+    PedCrowd& crowd = entry.second;
+    for (size_t i = 0; i < crowd.types.size(); ++i) {
+      if (i < crowd.kinds.size() && crowd.kinds[i].ready && crowd.kinds[i].render)
+        kind = crowd.kinds[i];
+      else {
+        const auto* type = gameref_get(crowd.types[i]);
+        if (!type || !parse_ped_kind(static_cast<uint32_t>(type->type_id), &kind)) continue;
+        if (i < crowd.kinds.size()) crowd.kinds[i] = kind;
+      }
+      if (kind.ready && kind.render) { found_kind = true; break; }
+    }
+    if (found_kind) break;
+  }
+  if (!found_kind) {
+    std::fprintf(stderr, "[onfoot] no registered native pedestrian type on this map\n");
+    return false;
+  }
+  PartMatrix car;
+  if (!scene_instances_script_matrix(chassis, car.data())) return false;
+  float spawn[3];
+  transform_point(car, -1.25f, 0.f, .2f, spawn);
+  SceneFloorHit floor;
+  if (!scene_instances_sample_floor(spawn[0], spawn[2], spawn[1] + 2.f, chassis, floor)) {
+    std::fprintf(stderr, "[onfoot] no floor beside the car\n");
+    return false;
+  }
+  PlayerPedestrian next;
+  next.chassis = chassis;
+  next.kind = kind;
+  next.x = spawn[0]; next.y = floor.height; next.z = spawn[2];
+  // Face the same way as the car: the mesh's +Z is its front, the car's
+  // front is its -Z axis.
+  next.yaw = std::atan2(-car[8], -car[10]);
+  next.car_was_suspended = rec->physics_suspended;
+  next.driver_render = drivers[chassis].render;
+  if (const auto* driver = gameref_get(next.driver_render)) next.driver_was_empty = driver->empty;
+  Object* render = runtime->new_object("java.util.resource.RenderRef");
+  GameRefState* node = gameref_upsert(render, GameRefKind::RenderRef);
+  if (!node) return false;
+  node->script = render;
+  node->alias = "pedestrian";
+  node->empty = false;
+  node->matrix_override = true;
+  gameref_set_type(*node, static_cast<int32_t>(kind.render));
+  const void* root = chassis_root(chassis);
+  if (root && root != chassis && gameref_get(const_cast<void*>(root)))
+    gameref_set_parent(render, const_cast<void*>(root));
+  gameref_make_live(render);
+  next.render = render;
+  player_ped = next;
+  place_player_pedestrian();
+  if (kind.anim) {
+    character_bind_animation(render, render, static_cast<int32_t>(kind.anim), *index);
+    character_play(render, true);
+    character_set_speed(render, 0.f);
+  }
+  save_onfoot_camera(player_ped.camera, render);
+  // The camera leaves the car and follows the actor through the same
+  // follow_vehicle slot the car used.
+  anchor_onfoot_camera(render);
+  rec->physics_suspended = true;
+  rec->dynamics.body.velocity = {};
+  rec->dynamics.body.set_omega({});
+  if (auto* driver = gameref_get(player_ped.driver_render)) driver->empty = true;
+  host_input().player_on_foot = true;
+  bind_native_player_walk();
+  std::fprintf(stderr, "[onfoot] entered native pedestrian mode (camera follows ped, F to re-enter)\n");
+  return true;
 }
 
 void clear_ped_agents(PedCrowd& crowd) {
@@ -7262,6 +7624,7 @@ void part_physics_end() {
   pose_steering_wheels();
   pose_cockpit_needles();
   pose_driver();
+  tick_player_pedestrian(physics_frame_seconds);
   {perf::Scope scope(perf::Zone::Pedestrians);tick_pedestrians(physics_frame_seconds);}
 }
 
@@ -7326,6 +7689,7 @@ float part_pedestrian_distance(void* ground, float x, float y, float z, int32_t 
 }
 
 void part_drop_actors() {
+  if (player_ped.render) leave_player_pedestrian();
   for (auto& entry : drivers) release_driver(entry.second);
   drivers.clear();
   for (auto& entry : crowds) clear_ped_agents(entry.second);
@@ -7466,6 +7830,9 @@ void hud_damage_parts(const Record &rec, VehicleHudState &state) {
   }
 }
 }  // namespace
+
+bool part_player_pedestrian_active() { return player_pedestrian_active_impl(); }
+bool part_toggle_player_pedestrian() { return toggle_player_pedestrian_impl(); }
 
 bool part_vehicle_hud(VehicleHudState &state) {
   if (!runtime) return false;
@@ -7668,6 +8035,18 @@ void *part_shadow_source(void *render, float *frame) {
   return nullptr;
 }
 bool part_camera_pose(void* car, int camera, float* matrix) {
+  if (!car || !matrix) return false;
+  // The on-foot player is a RenderRef, not a part. Return its world frame so
+  // the native follow camera can chase it through GameRefState::follow_vehicle
+  // exactly as it chases the controlled car.
+  if (const auto* actor = gameref_get(car);
+      actor && actor->kind == GameRefKind::RenderRef) {
+    PartMatrix actor_frame;
+    if (camera >= 0 || !scene_instances_render_matrix(actor->key, actor_frame.data()))
+      return false;
+    std::copy(actor_frame.begin(), actor_frame.end(), matrix);
+    return true;
+  }
   auto* chassis = as_part(static_cast<Object*>(car));
   const auto* rec = record(chassis);
   PartMatrix frame;
@@ -8901,6 +9280,9 @@ void part_visit_gc_roots(const GcRootVisitor& visit) {
   }
   for (const auto& entry : sfx_items) visit(entry.first);
   for (const auto& entry : drivers) visit(entry.second.render);
+  visit(player_ped.chassis);
+  visit(player_ped.render);
+  visit(player_ped.driver_render);
   for (const auto& entry : crowds) {
     visit(static_cast<Object*>(entry.first));
     for (void* type : entry.second.types) visit(static_cast<Object*>(type));

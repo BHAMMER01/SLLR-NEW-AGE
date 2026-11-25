@@ -3,6 +3,7 @@
 #include "slrr/host_input.hpp"
 #include "slrr/gameref.hpp"
 #include "slrr/host_game_options.hpp"
+#include "slrr/part_runtime.hpp"
 
 #include "slrr/jvm.hpp"
 #include "slrr/osd_registry.hpp"
@@ -53,6 +54,7 @@ bool brake_was_down = false;
 bool jack_was_down = false;
 bool was_del_down = false;
 bool was_photo_down = false;
+bool was_onfoot_f_down = false;
 
 bool captures_binding(Object* focus) {
   if (!focus) return false;
@@ -81,6 +83,9 @@ float mapped_axis(const ControllerInput& input, int axis) {
 }
 
 bool hotkey_down(const Hotkey& hotkey, const Object* controller) {
+  // F is reserved for the player exit/re-enter interaction. It must not also
+  // dispatch a script Hotkey that happens to use the same physical scan.
+  if (hotkey.axis == 0x21) return false;
   // Track's stock F1-F5 camera commands are replaced by the C camera cycle.
   // F5's separate ControlSet rear-look axis is still available outside flight.
   if (hotkey.axis >= 0x3b && hotkey.axis <= 0x3f) return false;
@@ -232,6 +237,7 @@ float host_input_physical_axis(int device, int axis) {
   if (axis < 0) return 0.f;
   const auto i = static_cast<size_t>(axis);
   if (device == 0 && i < keys.size()) {
+    if (i == 0x21) return 0.f; // physical F is the player pedestrian action
     // F1-F4 camera actions are replaced by C; F5 keeps the rear-look action.
     if ((i >= 0x3b && i <= 0x3e) || (i == 0x3f && g_input.free_camera_mode))
       return 0.f;
@@ -354,6 +360,10 @@ void host_input_update_controller(Object* controller, float dt) {
       std::any_of(controller->input->bindings.begin(), controller->input->bindings.end(),
                   [](const InputBinding& b) { return b.device == kPad && b.physical == 23; });
   in.drive_reverse = keys[0x13] || (!pad_y_mapped && pad[23] > .5f);
+  in.pedestrian_x = float(keys[0x20]) - float(keys[0x1e]); // D - A
+  in.pedestrian_z = float(keys[0x11]) - float(keys[0x1f]); // W - S
+  in.pedestrian_run = keys[0x2a] || keys[0x36]; // either Shift
+  in.pedestrian_jump = keys[0x39]; // Space
   if (in.bench_throttle >= 0.f) {
     in.drive_throttle = in.bench_throttle;
     in.drive_brake = 0.f;
@@ -361,6 +371,13 @@ void host_input_update_controller(Object* controller, float dt) {
     in.drive_steer_analog = false;
     in.drive_handbrake = false;
     in.drive_reverse = false;
+  }
+  // Keep this after --bench-drive too: on foot the parked car never receives
+  // a drive command, regardless of keyboard bindings or benchmark overrides.
+  if (in.player_on_foot) {
+    in.drive_steer = in.drive_throttle = in.drive_brake = 0.f;
+    in.drive_clutch = in.drive_shift = in.drive_nitro = 0.f;
+    in.drive_handbrake = in.drive_reverse = in.drive_horn = false;
   }
 }
 
@@ -401,6 +418,10 @@ bool host_input_allow_ui(int id, bool pressed) {
 
 void host_input_check_hotkeys(Jvm& jvm, Object* controller, Object* focus) {
   const bool capturing = captures_binding(focus);
+  const bool onfoot_f_down = keys[0x21]; // DirectInput scan 0x21 = F
+  if (!capturing && onfoot_f_down && !was_onfoot_f_down)
+    part_toggle_player_pedestrian();
+  was_onfoot_f_down = onfoot_f_down;
   // Native test bridge for the Brazilian/MW_Mod garage jack.  The patched
   // Garage.java owns the full animation, sound and mass-limit state machine;
   // this edge lets us exercise CMD_JACK even when its legacy OSD icon has no

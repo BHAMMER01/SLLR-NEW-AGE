@@ -2666,7 +2666,11 @@ std::string map_texture_key(std::string path) {
                               osd_loading_dialog() ||
                               !osd_loading_overlay().empty() ||
                               video_fmv_block_osd() || scene_transition_active();
-      const bool capture = in.free_camera_mode && foreground && !pointer_ui;
+      // Free flight and the on-foot camera own relative mouse look without
+      // requiring a right-button gesture: the view must turn with the mouse
+      // and stay on the pedestrian. Menus must receive ordinary movement.
+      const bool capture = (in.free_camera_mode || in.player_on_foot) &&
+                           foreground && !pointer_ui;
       if (capture && !in.rmb_down && !self->camera_cursor_clipped_) {
         POINT cursor{};
         if (GetCursorPos(&cursor)) {

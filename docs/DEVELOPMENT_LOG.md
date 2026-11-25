@@ -254,3 +254,39 @@ press the cruise hotkey.
   completed successfully with Visual Studio 2022 Build Tools.
 - Runtime validation: Release compilation passed; the Escape/menu mouse path
   still needs an interactive check.
+## 2026-11-25 — Native player pedestrian mode (first runtime pass)
+
+- Scope: New Age host input, pedestrian rendering/animation, player camera,
+  controlled-car physics suspension and map-unload cleanup. No Java scripts,
+  save data or external Godot project files changed.
+- Intent: port the Godot on-foot interaction to New Age using a pedestrian
+  type already registered by the active map.
+- Changes: F exits the controlled car at up to 3 m/s and re-enters within 3 m;
+  the actor spawns by the driver side on the sampled floor, follows the active
+  camera, uses WASD/Shift/Space, and suspends the car while on foot. The seated
+  driver is hidden during the mode and restored on return. Actor is GC-rooted
+  and removed with the world.
+- Animation: native walk clip remains active between interactions. A tracked
+  converter retargets the Godot `vehicle_get_out_a` and `vehicle_get_in_a` GLB
+  clips from the GTA `SKEL_*` rig onto each New Age `Bip01` pedestrian rig;
+  the host resolves loose `.matrixdata`/`.bon` assets beside the executable,
+  plays exit/entry clips as one-shots, and resumes walking or restores the car
+  after the corresponding clip. The reproducible converter is
+  `tools/godot_glb_ped_to_matrixdata.py`; run
+  `scripts/generate_ped_transitions.ps1 -GameRoot "<game root>"` to generate
+  all six families under `build/ped-transition/<pedestrian-family>/` from the
+  local Godot asset set.
+- Validation: production C++ parsers accepted all 16 generated clips (six
+  pedestrian families, two clips each, 25 matching tracks per clip; the
+  remaining four root-level clips are compatibility/prototype outputs). The
+  Release host build passed. Retarget pose, timing against vehicle placement,
+  and the complete F interaction have not yet been visually approved in-game.
+- Build: `cmake --build build --config Release --target slrr_host --parallel 8`
+  passed after resolving an initial link-scope error.
+- Runtime validation: not run in-game. The user-facing F workflow, camera
+  follow/orbit, character placement and return path still need interactive
+  validation in ValoCity.
+- Limits: requires the active GroundRef to have registered at least one usable
+  pedestrian type and the matching generated transition files alongside the
+  executable. Missing files fall back to walking on exit and immediate car
+  restoration on entry. In-game transition visuals remain unverified.

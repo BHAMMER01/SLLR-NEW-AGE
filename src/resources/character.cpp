@@ -893,6 +893,33 @@ void character_bind_animation(void* animation, void* render, int32_t clip_id,
   character->fresh = false;
 }
 
+bool character_bind_animation_files(void* animation, void* render,
+                                    const std::string& matrixdata_path,
+                                    const std::string& bon_path,
+                                    const RpkIndex& packs) {
+  if (!animation || !render || matrixdata_path.empty() || bon_path.empty()) return false;
+  detach_animation(animation, render);
+  const GameRefState* state = gameref_get(render);
+  const int32_t type_id = state ? state->type_id : 0;
+  Character* character = ensure_character(render, type_id, &packs);
+  if (!character) return false;
+  if (character->animation && character->animation != animation)
+    g_animations.erase(character->animation);
+  character->animation = animation;
+  g_animations[animation] = render;
+  character->clip = load_clip(packs, matrixdata_path);
+  character->lengths = load_skeleton(packs, bon_path);
+  character->speed = 1.f;
+  character->fade = 0.f;
+  character->fade_age = 0.f;
+  character->time = 0.f;
+  character->playing = false;
+  character->loop = false;
+  character->last_now = -1.f;
+  character->fresh = false;
+  return character->clip && character->lengths;
+}
+
 void character_release_animation(void* animation) {
   if (Character* character = animation_character(animation)) {
     character->clip.reset();
