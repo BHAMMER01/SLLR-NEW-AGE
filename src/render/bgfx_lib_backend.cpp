@@ -1336,6 +1336,27 @@ void LibBgfxBackend::update_local_light() {
       update_scenery_lights();
       return;
     }
+    // The legacy garage has low work lights in addition to the ceiling neon.
+    // Some Brazilian garage scripts do not expose those fixtures as runtime
+    // light resources, so add the authored-compatible fill lamps here.  This
+    // keeps the room, car and service bays from falling into black material
+    // fallback while preserving the open-air ROC garage behaviour.
+    const auto* garage = gameref_get(scene_instances_world());
+    if (garage && !outdoor_lighting_ && (garage->type_id & 0xffff) != 0x002f) {
+      constexpr std::array<std::array<float, 3>, 4> positions{{
+          {-3.3f, 2.4f, 0.f}, {3.3f, 2.4f, 0.f},
+          {0.f, 2.4f, 3.8f}, {0.f, 2.4f, -3.8f},
+      }};
+      LampLight fill;
+      fill.color = {1.f, .96f, .9f};
+      fill.attenuation = {1.f, 0.f, .45f};
+      fill.intensity = .75f;
+      fill.range = 8.f;
+      for (const auto& position : positions) {
+        fill.position = position;
+        scenery_lamps_.push_back(fill);
+      }
+    }
     // Script lights (java.render.LightSource, #235) come first. Position and
     // direction are in the parent's local script space; S*M*S with S = diag
     // (1,1,-1) is the instance transform, so render space is S*(M*local).
@@ -1401,8 +1422,13 @@ void LibBgfxBackend::update_local_light() {
                         -(matrix[14] + matrix[6] * 3.3f)};
       for (int i = 0; i < 3; ++i) {
         light.color[i] = std::max(node->directional_light.diffuse[i], 0.f);
-        light.ambient[i] =
-            std::max(node->directional_light.ambient[i], 0.f) * .15f;
+        // The legacy garage neon is also the interior fill.  Some Brazilian
+        // garage resources expose zero ambient on the directional record;
+        // forwarding that zero makes bgfx render the room nearly black even
+        // though the authored ceiling fixtures are present.  Preserve an
+        // authored value when available, but keep a small compatibility fill.
+        light.ambient[i] = std::max(
+            std::max(node->directional_light.ambient[i], 0.f) * .15f, .22f);
       }
       if (!light.valid())
         continue;

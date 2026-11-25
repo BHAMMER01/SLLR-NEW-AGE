@@ -40,6 +40,11 @@ void load_host_options(const std::string& root) {
       host_options_path + "save\\game\\openslrr_axis_calibration");
   host_options_path += "save\\game\\openslrr_options";
   host_enhanced_graphics() = {};
+  // The stock garage relies on punctual lights (neon/point/spot fixtures),
+  // not only on the directional sun. Keep the modern local-light path enabled
+  // by default so a fresh New Age profile does not render the garage black.
+  host_enhanced_graphics().local_lights = true;
+  host_enhanced_graphics().dynamic_lighting = true;
   framerate_mode = FramerateMode::Adaptive;
   auto& graphics = host_enhanced_graphics();
   std::ifstream in(host_options_path);

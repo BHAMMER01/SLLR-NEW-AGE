@@ -1402,7 +1402,6 @@ public class Garage extends Scene implements GameState
 				if ( player.car )
 				{
 					CarVector = player.car.getPos();
-
 					if (CarVector.x < JackPos.x+0.5 && CarVector.x > JackPos.x-0.5 && CarVector.z < JackPos.z+0.5 && CarVector.z > JackPos.z-0.6)
 					{
 						SFX_Loop_ID = Jack_Move_SFX.play( JackPos, 0.0, 1.0, 1.0, 0 ); // SFX Move
