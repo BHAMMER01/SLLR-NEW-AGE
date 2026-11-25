@@ -125,6 +125,7 @@ struct GameRefState {
   int cockpit_index = -1;
   int follow_variant = 0;
   bool camera_free = false, camera_autozoom = false, camera_attached = false;
+  bool camera_mode_override = false;
   float camera_roll = 0.f;
   // `angle offset gain rate` (native handler 0x43af6d, update 0x439d3c): goal
   // azimuth around the target, relative to its heading (0 = behind); a gain
@@ -162,6 +163,7 @@ struct GameRefState {
   // Mouse orbit accumulated until the view is built.
   float orbit_yaw = 0.f;
   float orbit_pitch = 0.f;
+  float orbit_roll = 0.f;
   float orbit_zoom = 0.f;
   // Spring length of the native camera (`move` distance). The wheel scales it
   // inside the `dist` range: garage 1–10, dealer 2.5–4.6.
@@ -284,6 +286,8 @@ std::vector<GameRefState*> gameref_active_cameras();
 // Newest active camera in the selected scene world, including a resized view.
 // Independent local worlds are excluded; without a selected world, use fullscreen.
 GameRefState* fullscreen_script_camera();
+bool gameref_toggle_free_camera();
+bool gameref_cycle_vehicle_camera();
 // system:0x33. Constructor params are "x,y,z,yaw,pitch,roll,...".
 void gameref_bind_scene_camera(void* key, const std::string& params);
 // system:0x34 (GameRef.RID_TRIGGER). Parses the trigger volume from the

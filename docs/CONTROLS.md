@@ -62,6 +62,67 @@ Copy-Item <copia-do-jogo>\system\Scripts\io\ControlSet*.class patch\system\Scrip
 | `F12` | Screenshot/ação de impressão do jogo |
 | `Ctrl+F12` | Painel de diagnóstico ImGui do host |
 
+## Inventário do mapeamento padrão
+
+Este inventário junta os grupos de `ControlSet.java` com os atalhos registrados
+pela classe de pista `Track` instalada. O grupo ativo depende da tela: a mesma
+seta pode navegar no menu, olhar ao redor ou mover a câmera de uma loja.
+
+| Tecla | Grupo/contexto | Ação encontrada no código |
+| --- | --- | --- |
+| `W` / `S` | Direção | Acelerar / frear |
+| `A` / `D` | Direção | Virar à esquerda / direita |
+| `Space` | Direção e menu | Freio de mão; também selecionar no menu |
+| `Left Shift` / `Left Ctrl` | Direção | Subir / descer marcha |
+| `E` | Direção | Embreagem |
+| `N` / `H` | Direção | Nitro / buzina |
+| `P` | Direção | Cruise control |
+| `B` / `M` | Direção | Olhar para trás / abrir o mapa |
+| `Enter` / `Numpad Enter` | Menu | Selecionar |
+| `Esc` | Geral/menu | Abrir/voltar/cancelar; também pula as intros |
+| Setas | Menu | Navegar para cima, baixo, esquerda e direita |
+| Setas | Olhar | Inclinar a visão para cima/baixo e girar para esquerda/direita |
+| Setas | Movimento de loja | Mover para frente/trás e para os lados |
+| `Page Up` / `Page Down` / roda | Câmera | Zoom para perto/longe |
+| Botão esquerdo | Ponteiro | Clique/seleção |
+| Botão direito | Câmera/ponteiro | Segurar e arrastar para orbitar; também ação secundária |
+| `.` / `,` | Música | Próxima faixa / faixa anterior |
+| `Numpad *` / `Numpad /` | Música | Aumentar / diminuir volume |
+| `Numpad 7, 8, 9, 4, 5, 6, 1, 2, 3, 0` | Direção | Ações especiais/fogo do perfil; o efeito depende do veículo ou script ativo |
+| `F12` | Geral | Screenshot/ação de impressão |
+| `Ctrl+F12` | Host New Age | Abrir/fechar painel de diagnóstico |
+
+### Câmeras da pista e conflito F1–F5
+
+A classe `Track` instalada registra originalmente F1 para câmera interna, F2
+para câmera de TV, F3 para câmera externa/seguimento, F4 para chase e F5 para
+chase invertida. O grupo `ControlSet` também associa F1/F2 a olhar anterior/
+próximo e F5 a olhar para trás. Essa duplicidade é a origem do conflito.
+
+No New Age, `C` é o único atalho para trocar os modos de câmera da pista. Ele
+usa os comandos nativos de `Track` e avança por cada posição interna retornada
+pelo carro antes de seguir pelos demais modos. F1–F4 são consumidas pelo host e
+nunca mudam a câmera. F5 continua sendo olhar para trás; seu comando original
+de chase invertida também é acessível pelo ciclo de `C`.
+
+### Câmera de voo New Age
+
+| Tecla | Ação durante o voo |
+| --- | --- |
+| `Delete` | Entrar/sair da câmera de voo |
+| `W` / `S` | Avançar / recuar a câmera, sem mover o carro |
+| `A` / `D` | Deslocar a câmera para os lados, sem virar o carro |
+| `Left Shift` / `Left Ctrl` | Subir / descer |
+| `E` / `Q` | Inclinar/rolar a câmera para os lados |
+| Mouse | Orientar a câmera livremente, sem segurar botão |
+| Roda do mouse | Mudar o multiplicador de voo em passos; faixa de `x0,01` a `x512` |
+| Indicador na tela | Mostra o multiplicador de velocidade atual durante o voo |
+| `F1` | Alternar modo foto, ocultando/mostrando a HUD; não troca a câmera |
+
+F1–F5 são atalhos de câmera originais da classe `Track`; F9 (câmera livre),
+F10 (reparo rápido) e F11 (troca do alvo de câmera) só são registrados quando
+`Config.majomParade` está ativo no jogo original.
+
 ## Música
 
 | Tecla | Ação |

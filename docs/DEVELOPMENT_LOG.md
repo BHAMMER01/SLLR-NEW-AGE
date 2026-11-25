@@ -164,3 +164,56 @@ press the cruise hotkey.
   effects for frame time. It is opt-in and not the default profile; visual
   comparison and a longer stress run are still required before recommending it
   as the standard city preset.
+
+## 2026-11-25 — Route Track camera changes through C
+
+- Scope: keyboard input and Track camera selection; vehicle physics, scripts
+  and save data are unchanged.
+- Intent: remove the F1 camera conflict and make C the single selector for
+  Track camera modes, including all camera points exposed by the current car.
+- Findings: the installed `Track.class` registers F1–F5 for internal, TV,
+  external/follow, chase and inverse chase. The installed `ControlSet.class`
+  also maps F1/F2 to `AXIS_LOOK_PREVNEXT` and F5 to `AXIS_LOOK_REAR`.
+- Changes: C sends the native Track camera commands and reads the car's
+  `GII_RENDER` camera count to step through all internal camera points. The
+  host consumes F1–F4 and suppresses their ControlSet axes; F1 toggles photo
+  mode only while free flight is active. F5's rear-look action remains
+  separate from the C camera cycle.
+- Build: pending after the latest input filtering change.
+- Runtime validation: earlier C routing reached all five Track modes, but
+  not every internal camera point. The latest global F1–F4 filter and dynamic
+  camera count still need interactive confirmation in the rebuilt city.
+- Evidence: `build/camera-controls-city.out.log`; the older run records the
+  repeated C transitions. Fresh logs remain ignored under `build/`.
+- Limits: verify F1 outside/inside flight, C through each internal point and
+  Track mode, and F5 rear-look after the next launch.
+
+## 2026-11-25 — Make free-flight look independent of mouse buttons
+
+- Scope: free-flight camera input and HUD rendering; no vehicle physics,
+  gameplay scripts, save data, audio or content assets changed.
+- Intent: make mouse look active without right-click, assign E/Q to camera roll,
+  adjust flight speed with the wheel, and ensure photo mode hides the minimap.
+- Changes: raw relative mouse input is captured while free flight is active;
+  E/Q apply roll around the view axis while mouse controls yaw/pitch. Wheel
+  changes movement speed. The map is rendered by a separate camera preview at
+  viewport priority 12, so photo mode now skips that preview and OSD drawing.
+- Build: passed with `cmake --build build --config Release --target slrr_host`.
+- Runtime: the rebuilt New Age opened directly into ValoCity under Vulkan;
+  `build/photo-hud-city.out.log` records the city transition.
+- Limits: the minimap preview is now filtered by its viewport-12 render path;
+  visual confirmation after F1, wheel-speed adjustment, and E/Q roll direction
+  still need the user's in-game check.
+
+## 2026-11-25 — Add discrete free-flight speed multipliers
+
+- Scope: free-flight movement speed and its OSD indicator; no vehicle physics,
+  world scripts, saves, audio or assets changed.
+- Intent: provide precise slow movement and a much higher top speed using the
+  mouse wheel while free flight is active.
+- Changes: wheel detents select discrete multipliers from x0.01 through x512;
+  partial wheel deltas accumulate until a full detent. The flight OSD displays
+  the selected multiplier. Outside flight the wheel remains camera zoom.
+- Build: pending.
+- Runtime validation: pending in the New Age city.
+- Limits: confirm low-speed precision, high-speed travel and the HUD label.

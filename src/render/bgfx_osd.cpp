@@ -453,6 +453,7 @@ namespace slrr {
 #endif
 #ifdef _WIN32
 void LibBgfxBackend::draw_vehicle_hud(const VehicleHudState& hud) {
+  if (host_input().photo_mode) return;
   const uint32_t gps_id = rpk_resolve_resource("frontend.rpk", 0x83);
   const auto &widgets = osd_widgets();
   if (std::none_of(widgets.begin(), widgets.end(), [&](const OsdWidget& w) {
@@ -732,6 +733,7 @@ void LibBgfxBackend::draw_vehicle_hud(const VehicleHudState& hud) {
   void LibBgfxBackend::draw_osd()
 {
     perf::Scope perf_scope(perf::Zone::Osd);
+    if (host_input().photo_mode) return;
     osd_sync_button_pictures();
     const auto& widgets = osd_widgets();
     const auto& texts = slrr_osd_texts();
@@ -755,6 +757,21 @@ void LibBgfxBackend::draw_vehicle_hud(const VehicleHudState& hud) {
     };
     setup_osd(kOsdUnder);
     setup_osd(kOsdView);
+    if (host_input().free_camera_mode) {
+      void* font_key = slrr_font_ui_small();
+      static bool flight_font_tried = false;
+      if (font_key && !slrr_font_ready(font_key) && !flight_font_tried) {
+        flight_font_tried = true;
+        slrr_font_load(font_key, "slii11");
+      }
+      if (font_key && slrr_font_ready(font_key)) {
+        char speed_label[48]{};
+        std::snprintf(speed_label, sizeof(speed_label), "FLIGHT SPEED x%.3g",
+                      host_input().free_camera_speed_multiplier);
+        osd_view_ = kOsdView;
+        draw_osd_line(font_key, speed_label, -.96f, -.78f, 2, 0xFFFFFFFFu);
+      }
+    }
     osd_view_ = kOsdUnder;
 
     // Menu plate: dark translucent fullscreen when GENERALBG path missing.

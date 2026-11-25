@@ -67,6 +67,11 @@ struct HostInput {
   bool drive_steer_analog = false;
   float drive_clutch = 0.f, drive_shift = 0.f;
   float free_camera_x = 0.f, free_camera_y = 0.f, free_camera_z = 0.f;
+  float free_camera_turn = 0.f;
+  float free_camera_roll = 0.f;
+  float free_camera_speed_multiplier = 1.f; // Discrete wheel-selected multiplier.
+  bool free_camera_mode = false;
+  bool photo_mode = false;
   bool drive_horn = false;
   float drive_nitro = 0.f;
   bool drive_reverse = false, drive_handbrake = false;

@@ -930,7 +930,8 @@ MainLoopFrameResult mainloop_frame(Jvm& jvm, IRenderBackend& render,
   // Last write before the view is built. The chase camera must not cover
   // the showroom orbit, and nothing after the earlier spin may put it back.
   spin_car_select_camera(sections.actual());
-  if (auto* camera = fullscreen_script_camera(); camera && camera->follow_vehicle) {
+  if (auto* camera = fullscreen_script_camera(); camera && camera->follow_vehicle &&
+      !camera->camera_mode_override) {
     const int mode = field_int(sections.actual(), "cameraMode");
     camera->follow_variant = mode == 3 || mode == 4 ? mode : 0;
   }

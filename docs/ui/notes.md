@@ -115,6 +115,45 @@ previews. Evidence is in assets/validation/map-views/{before,after}.txt.
   Baiern, F1 posted as WM_KEYDOWN): before, an empty world; after, the city
   seen from the car's first cfg camera.
 
+### Track camera hotkeys and the C cycle
+
+- The installed `java.game.Track` registers F1/F2/F3/F4/F5 as internal, TV,
+  external/follow, chase and inverse-chase camera commands. The installed
+  `ControlSet` additionally maps F1/F2 to `AXIS_LOOK_PREVNEXT` and F5 to
+  `AXIS_LOOK_REAR`, so a key press can activate both systems.
+- New Age routes Track camera changes through C. The host sends the original
+  Track commands and reads `cameraTarget.getInfo(GII_RENDER)` so C advances
+  through every internal camera point before advancing to the next Track mode.
+- F1-F4 are consumed at the host window input boundary and their physical
+  ControlSet axes are zeroed. F1 toggles photo mode only in free flight. F5's
+  separate rear-look axis remains active outside free flight; its Track
+  inverse-chase command is suppressed as a direct key action and remains
+  available through C.
+- Build: pending after the latest input filtering change.
+- Runtime: the earlier C implementation reached all five Track modes, but
+  did not advance through the multiple internal camera points. The current
+  dynamic internal-camera count and global F1-F4 filtering still need an
+  interactive confirmation.
+- Limits: menu camera bindings and user-saved control profiles need a manual
+  check after the next launch.
+
+### Free-flight mouse, roll and photo HUD
+
+- In free flight the host captures raw relative mouse movement automatically;
+  right-click is no longer required to look around.
+- E/Q roll the view around its forward axis. Mouse movement remains responsible
+  for yaw and pitch, so the controls do not overlap.
+- The mouse wheel steps through discrete flight-speed multipliers from x0.01
+  to x512; a screen label shows the current value. Outside flight the wheel
+  retains its normal camera zoom behavior.
+- The minimap is a separate camera preview at viewport priority 12, not part of
+  the OSD. Photo mode now skips that preview along with the OSD GPS frame and
+  vehicle gauges.
+- Physics and vehicle inputs remain frozen while free flight is active.
+- Validation: Release build passed and New Age opened ValoCity in Vulkan. The
+  priority-12 preview suppression is present in the city render path; final
+  visual confirmation after F1 remains a manual in-game check.
+
 ### OSD plates over preview cameras (#348)
 
 - `src/render/bgfx_osd.cpp` draws OSD plates either on `kOsdUnder` (view 7,

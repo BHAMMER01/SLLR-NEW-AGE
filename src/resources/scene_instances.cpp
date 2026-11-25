@@ -2895,14 +2895,11 @@ GroundMapData scene_instances_ground_map(const RpkIndex &rpk, uint32_t ground_id
       group.base_map.channel = mats[sec.material].tex_channel;
       group.mix_index = mats[sec.material].mix;
       group.mix_map.channel = mats[sec.material].mix_channel;
-      // Apply the per-material tile scale so POLY UVs (world-space metres)
-      // map correctly to texture space.  scale_u/v = 1/tile normalises them:
-      // the shader multiplies the raw UV by this before sampling.
-      const float tile = mats[sec.material].tex_tile;
-      if (tile > 0.f) {
-        group.base_map.scale_u = 1.f / tile;
-        group.base_map.scale_v = 1.f / tile;
-      }
+      // Per-material tile scale from SCY offset +0x24 has been reverted.
+      // The original SLRR behavior uses identity UV scaling (scale_u/v = 1.f)
+      // so POLY world-space UVs are not artificially zoomed.
+      group.base_map.scale_u = 1.f;
+      group.base_map.scale_v = 1.f;
     }
     const int illumination = known ? mats[sec.material].lm : -1;
     const bool has_illumination = illumination >= 0 &&

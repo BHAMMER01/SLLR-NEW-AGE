@@ -625,6 +625,10 @@ bool gameref_scene_command(void* key, const std::string& line) {
   return std::strcmp(word, "torque") == 0;
 }
 
+static bool world_camera_pose(float eye[3], float at[3], float* fov,
+                              float* znear, float* zfar, float dt,
+                              float* up);
+
 GameRefState* fullscreen_script_camera() {
   GameRefState* found = nullptr;
   for (GameRefState* c : gameref_active_cameras()) {
@@ -651,6 +655,44 @@ GameRefState* fullscreen_script_camera() {
     if (!found || c->cam_seq >= found->cam_seq) found = c;
   }
   return found;
+}
+
+bool gameref_toggle_free_camera() {
+  GameRefState* cam = fullscreen_script_camera();
+  if (!cam || cam->cockpit_index >= 0) return false;
+  auto& input = host_input();
+  if (!cam->camera_free) {
+    float eye[3], at[3];
+    if (!world_camera_pose(eye, at, nullptr, nullptr, nullptr, 0.f, nullptr))
+      return false;
+    std::copy_n(eye, 3, cam->pos);
+    const float dx = at[0] - eye[0], dy = at[1] - eye[1], dz = at[2] - eye[2];
+    cam->ypr[0] = std::atan2(-dx, -dz);
+    cam->ypr[1] = std::atan2(dy, std::hypot(dx, dz));
+    cam->camera_free = true;
+    cam->orbit_yaw = cam->orbit_pitch = cam->orbit_roll = 0.f;
+    input.free_camera_mode = true;
+    std::printf("[camera] free flight enabled\n");
+  } else {
+    cam->camera_free = false;
+    cam->cam_pose_init = false;
+    cam->follow_hold = false;
+    input.free_camera_mode = false;
+    input.photo_mode = false;
+    std::printf("[camera] vehicle camera restored\n");
+  }
+  return true;
+}
+
+bool gameref_cycle_vehicle_camera() {
+  GameRefState* cam = fullscreen_script_camera();
+  if (!cam || !cam->follow_vehicle || cam->camera_free) return false;
+  cam->follow_variant = cam->follow_variant == 0 ? 3
+                      : cam->follow_variant == 3 ? 4 : 0;
+  cam->camera_mode_override = true;
+  cam->cam_pose_init = false;
+  std::printf("[camera] vehicle view=%d\n", cam->follow_variant);
+  return true;
 }
 
 // Pori step: current += (dest - current) * rate, once per tick at 60 Hz.
@@ -856,14 +898,20 @@ static bool driving_camera_pose(GameRefState& cam, float* eye, float* at,
                                 float* up, float dt) {
   using physics::Vec3;
   if (cam.camera_free) {
+    const auto& input = host_input();
+    cam.orbit_roll = std::remainder(cam.orbit_roll + input.free_camera_roll * dt * 1.8f,
+                                    6.2831853f);
     const float yaw = cam.ypr[0] + cam.orbit_yaw;
     const float pitch = std::clamp(cam.ypr[1] + cam.orbit_pitch, -1.5f, 1.5f);
     const Vec3 forward{-std::sin(yaw) * std::cos(pitch), std::sin(pitch),
                        -std::cos(yaw) * std::cos(pitch)};
     const Vec3 right{std::cos(yaw), 0, -std::sin(yaw)};
-    const auto& input = host_input();
+    const Vec3 base_up = right.cross(forward);
+    const Vec3 camera_up = base_up * std::cos(cam.orbit_roll) -
+                           right * std::sin(cam.orbit_roll);
     const Vec3 motion = (forward * input.free_camera_z + right * input.free_camera_x +
-                         Vec3{0, input.free_camera_y, 0}) * (dt * 12);
+                         Vec3{0, input.free_camera_y, 0}) *
+                         (dt * 12.f * input.free_camera_speed_multiplier);
     cam.pos[0] += float(motion.x);
     cam.pos[1] += float(motion.y);
     cam.pos[2] += float(motion.z);
@@ -871,6 +919,11 @@ static bool driving_camera_pose(GameRefState& cam, float* eye, float* at,
     at[0] = eye[0] + float(forward.x);
     at[1] = eye[1] + float(forward.y);
     at[2] = eye[2] + float(forward.z);
+    if (up) {
+      up[0] = float(camera_up.x);
+      up[1] = float(camera_up.y);
+      up[2] = float(camera_up.z);
+    }
     return true;
   }
 
@@ -1130,8 +1183,11 @@ void gameref_orbit_world_camera(float yaw_delta, float pitch_delta, float key_ya
   ay += key_pitch;
   GameRefState* cam = fullscreen_script_camera();
   if (cam && (cam->camera_free || (cam->follow_vehicle && cam->cockpit_index < 0))) {
-    cam->orbit_yaw = std::remainder(cam->orbit_yaw + in.mouse_dx * .003f, 6.2831853f);
-    cam->orbit_pitch = std::clamp(cam->orbit_pitch + in.mouse_dy * .003f, -1.1f, 1.1f);
+    const float mouse_sign = cam->camera_free ? -1.f : 1.f;
+    cam->orbit_yaw = std::remainder(
+        cam->orbit_yaw + mouse_sign * in.mouse_dx * .003f, 6.2831853f);
+    cam->orbit_pitch = std::clamp(
+        cam->orbit_pitch + mouse_sign * in.mouse_dy * .003f, -1.1f, 1.1f);
   }
   in.mouse_dx = in.mouse_dy = 0.f;
   if (!cam || cam->cockpit_index >= 0) return;

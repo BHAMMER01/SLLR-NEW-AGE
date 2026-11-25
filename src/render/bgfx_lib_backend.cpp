@@ -2135,6 +2135,13 @@ void LibBgfxBackend::submit_world(uint16_t world_view, bgfx::FrameBufferHandle t
     uint16_t id = kPreview0;
     for(const auto&p:previews_) {
       if(id>=64)break;
+      // The driving GPS map is its own viewport (priority 12), rendered as a
+      // camera preview rather than as part of the OSD. Photo mode hides this
+      // pass as well as the vehicle gauges and GPS frame.
+      if (host_input().photo_mode && p.viewport.vp_pri == 12) {
+        ++id;
+        continue;
+      }
       int x=std::clamp(static_cast<int>(p.viewport.vp_x*width_),0,width_-1),y=std::clamp(static_cast<int>(p.viewport.vp_y*height_),0,height_-1);
       int w=std::clamp(static_cast<int>(p.viewport.vp_w*width_),1,width_-x),h=std::clamp(static_cast<int>(p.viewport.vp_h*height_),1,height_-y);
       float world[16],view[16],proj[16];if(!scene_instance_transform(p.camera.key,p.camera.parent,world))continue;
@@ -2643,6 +2650,25 @@ std::string map_texture_key(std::string path) {
       }
       host_cursor_end_camera_drag();
     };
+    const auto sync_free_camera_mouse = [&] {
+      if (!self || !self->raw_mouse_ || in.debug_mouse_capture) return;
+      if (in.free_camera_mode && !in.rmb_down && !self->camera_cursor_clipped_) {
+        POINT cursor{};
+        if (GetCursorPos(&cursor)) {
+          const RECT clip{cursor.x, cursor.y, cursor.x + 1, cursor.y + 1};
+          self->camera_cursor_clipped_ = ClipCursor(&clip) != FALSE;
+          if (self->camera_cursor_clipped_) host_cursor_begin_camera_drag();
+        }
+      } else if (!in.free_camera_mode && self->camera_cursor_clipped_ && !in.rmb_down) {
+        ClipCursor(nullptr);
+        self->camera_cursor_clipped_ = false;
+        host_cursor_end_camera_drag();
+      }
+    };
+    // Free flight owns relative mouse look without requiring a right-button
+    // gesture. Raw input plus a one-pixel clip keeps the cursor from reaching
+    // the window edge; the normal pointer returns when flight ends.
+    sync_free_camera_mouse();
     const auto cancel_left = [&] {
       if (!self) return;
       self->lmb_down_ = false;
@@ -2828,6 +2854,12 @@ std::string map_texture_key(std::string path) {
       return 0;
     }
     if (msg == WM_KILLFOCUS) host_input_clear_keys();
+    if ((msg == WM_KILLFOCUS || msg == WM_DESTROY) && self &&
+        self->camera_cursor_clipped_) {
+      ClipCursor(nullptr);
+      self->camera_cursor_clipped_ = false;
+      if (!in.rmb_down) host_cursor_end_camera_drag();
+    }
     if (msg == WM_KEYDOWN || msg == WM_KEYUP ||
         msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
       const int scan = static_cast<int>((lp >> 16) & 0x7f) |
@@ -2900,8 +2932,33 @@ std::string map_texture_key(std::string path) {
       return 0;
     }
     if (msg == WM_MOUSEWHEEL) {
+      static constexpr float kFlightSpeedMultipliers[] = {
+          .01f, .02f, .05f, .1f, .15f, .25f, .35f, .5f, .75f,
+          1.f, 1.25f, 1.5f, 2.f, 2.5f, 3.f, 4.f, 5.f, 6.f, 8.f,
+          12.f, 16.f, 24.f, 32.f, 48.f, 64.f, 96.f, 128.f, 192.f,
+          256.f, 384.f, 512.f};
+      static int flight_wheel_remainder = 0;
       const int delta = GET_WHEEL_DELTA_WPARAM(wp);
-      in.look_zoom += static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA);
+      if (in.free_camera_mode) {
+        flight_wheel_remainder += delta;
+        const int notches = flight_wheel_remainder / WHEEL_DELTA;
+        flight_wheel_remainder %= WHEEL_DELTA;
+        if (notches) {
+          const auto begin = std::begin(kFlightSpeedMultipliers);
+          const auto end = std::end(kFlightSpeedMultipliers);
+          const auto current = std::find(begin, end, in.free_camera_speed_multiplier);
+          const int index = current == end ? 9 : static_cast<int>(current - begin);
+          const int next = std::clamp(index + notches, 0,
+                                      static_cast<int>(std::size(kFlightSpeedMultipliers)) - 1);
+          in.free_camera_speed_multiplier = kFlightSpeedMultipliers[next];
+          std::printf("[camera] free-flight multiplier=x%.3g speed=%.1f units/s\n",
+                      in.free_camera_speed_multiplier,
+                      12.f * in.free_camera_speed_multiplier);
+        }
+      } else {
+        flight_wheel_remainder = 0;
+        in.look_zoom += static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA);
+      }
       return 0;
     }
     if (msg == WM_CLOSE) {

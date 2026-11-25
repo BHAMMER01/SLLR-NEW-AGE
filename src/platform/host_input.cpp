@@ -1,6 +1,7 @@
 #include "host_input_mapping.hpp"
 #include "host_input_devices.hpp"
 #include "slrr/host_input.hpp"
+#include "slrr/gameref.hpp"
 #include "slrr/host_game_options.hpp"
 
 #include "slrr/jvm.hpp"
@@ -50,6 +51,8 @@ std::vector<Hotkey> hotkeys;
 uint64_t next_hotkey = 0;
 bool brake_was_down = false;
 bool jack_was_down = false;
+bool was_del_down = false;
+bool was_photo_down = false;
 
 bool captures_binding(Object* focus) {
   if (!focus) return false;
@@ -78,6 +81,9 @@ float mapped_axis(const ControllerInput& input, int axis) {
 }
 
 bool hotkey_down(const Hotkey& hotkey, const Object* controller) {
+  // Track's stock F1-F5 camera commands are replaced by the C camera cycle.
+  // F5's separate ControlSet rear-look axis is still available outside flight.
+  if (hotkey.axis >= 0x3b && hotkey.axis <= 0x3f) return false;
   // Track.class creates CMD_CRUISECONTROL with the physical S scan (0x1f,
   // decimal 31). The New Age control contract assigns cruise to P instead:
   // remap this specific cruise hotkey to P. S may produce the release edge so
@@ -126,6 +132,24 @@ void host_input_clear_history() { history.clear(); }
 
 void host_input_key(int scan, bool down) {
   if (scan <= 0 || scan >= static_cast<int>(keys.size())) return;
+  // C is the only Track camera selector. Consume F1-F4 at the window boundary;
+  // F5 remains the distinct rear-look key except while free flight is active.
+  if ((scan >= 0x3b && scan <= 0x3e) ||
+      (scan == 0x3f && g_input.free_camera_mode)) {
+    if (scan == 0x3b) {
+      if (down && !was_photo_down && g_input.free_camera_mode) {
+        g_input.photo_mode = !g_input.photo_mode;
+      }
+      if (down && !was_photo_down)
+        std::printf("[camera] F1 consumed free=%d photo=%d\n",
+                    g_input.free_camera_mode ? 1 : 0,
+                    g_input.photo_mode ? 1 : 0);
+      was_photo_down = down;
+    }
+    keys[scan] = false;
+    pressed[scan] = frame_pressed[scan] = false;
+    return;
+  }
   static const bool trace_all = std::getenv("SLRR_INPUT_TRACE") != nullptr;
   if (trace_all || scan == 0x1f || scan == 0x19 || scan == 0x11)
     std::printf("[input-key] scan=0x%02x down=%d\n", scan, down ? 1 : 0);
@@ -167,6 +191,7 @@ void host_input_poll_keys() {
   auto held = [game_mouse](int key) {
     return game_mouse && (GetAsyncKeyState(key) & 0x8000);
   };
+  keys[0xd3] = focused && (GetAsyncKeyState(VK_DELETE) & 0x8000);
   mouse = {game_mouse ? in.cursor_x : 0.f, game_mouse ? in.cursor_y : 0.f,
            game_mouse ? in.look_zoom : 0.f, float(held(VK_LBUTTON)),
            float(held(VK_RBUTTON)), float(held(VK_MBUTTON))};
@@ -206,7 +231,12 @@ std::string host_input_axis_name(int device, int axis) {
 float host_input_physical_axis(int device, int axis) {
   if (axis < 0) return 0.f;
   const auto i = static_cast<size_t>(axis);
-  if (device == 0 && i < keys.size()) return keys[i] || frame_pressed[i] ? 1.f : 0.f;
+  if (device == 0 && i < keys.size()) {
+    // F1-F4 camera actions are replaced by C; F5 keeps the rear-look action.
+    if ((i >= 0x3b && i <= 0x3e) || (i == 0x3f && g_input.free_camera_mode))
+      return 0.f;
+    return keys[i] || frame_pressed[i] ? 1.f : 0.f;
+  }
   if (device == 1 && i < mouse.size()) return mouse[i];
   if (device >= kPad) return host_input_devices().axis(device, axis);
   return 0.f;
@@ -303,8 +333,23 @@ void host_input_update_controller(Object* controller, float dt) {
   in.free_camera_x = -axis(4);
   in.free_camera_y = axis(5);
   in.free_camera_z = axis(6);
+  if (in.free_camera_mode) {
+    in.free_camera_x = float(keys[0x20]) - float(keys[0x1e]); // D - A
+    in.free_camera_z = float(keys[0x11]) - float(keys[0x1f]); // W - S
+    in.free_camera_y = float(keys[0x2a] || keys[0x36]) -
+                       float(keys[0x1d] || keys[0x9d]); // Shift - Ctrl
+    in.free_camera_turn = 0.f; // Mouse owns yaw and pitch in free flight.
+    in.free_camera_roll = float(keys[0x10]) - float(keys[0x12]); // Q - E
+    in.drive_steer = in.drive_throttle = in.drive_brake = 0.f;
+    in.drive_clutch = in.drive_shift = in.drive_nitro = 0.f;
+    in.drive_handbrake = in.drive_reverse = in.drive_horn = false;
+  } else {
+    in.free_camera_turn = 0.f;
+    in.free_camera_roll = 0.f;
+  }
   in.drive_shift = axis(50);
   in.drive_horn = axis(54) > .5f;
+  if (in.free_camera_mode) in.drive_shift = 0.f;
   const bool pad_y_mapped = controller && controller->input &&
       std::any_of(controller->input->bindings.begin(), controller->input->bindings.end(),
                   [](const InputBinding& b) { return b.device == kPad && b.physical == 23; });
@@ -371,6 +416,70 @@ void host_input_check_hotkeys(Jvm& jvm, Object* controller, Object* focus) {
   }
   jack_was_down = jack_down;
   const bool brake_down = keys[0x1f];
+  // DEL (DirectInput scan 0xD3) toggles the active world camera's free-flight pose.
+  // 0x53 is the physical D key, not Delete.
+  const bool del_down = keys[0xd3];
+  if (del_down && !was_del_down) {
+    if (!capturing) gameref_toggle_free_camera();
+  }
+  was_del_down = del_down;
+  // C cycles the stock Track camera modes, excluding look-around/rear view.
+  static bool was_camera_cycle_down = false;
+  const bool camera_cycle_down = keys[0x2e]; // C
+  static bool camera_c_logged = false;
+  if (camera_cycle_down && !camera_c_logged)
+    std::printf("[camera] physical C received; free=%d capture=%d\n",
+                g_input.free_camera_mode ? 1 : 0, capturing ? 1 : 0);
+  camera_c_logged = camera_cycle_down;
+  if (camera_cycle_down && !was_camera_cycle_down && !capturing &&
+      !g_input.free_camera_mode) {
+    const Value actual = jvm.get_static("java.game.GameLogic", "actualState");
+    Object* track = actual.tag == ValueTag::Obj ? actual.v.o : nullptr;
+    if (track) {
+      int mode = 1; // follow view
+      int camera_num = 0;
+      const auto it = track->fields.find("cameraMode");
+      if (it != track->fields.end() && it->second.tag == ValueTag::Int)
+        mode = it->second.v.i;
+      const auto camera_num_it = track->fields.find("cameraNum");
+      if (camera_num_it != track->fields.end() && camera_num_it->second.tag == ValueTag::Int)
+        camera_num = camera_num_it->second.v.i;
+      // Track.CAMMODE_INTERNAL=5, TV=2, FOLLOW=1, CHASE=3, INVCH=4.
+      constexpr int modes[] = {5, 2, 1, 3, 4};
+      constexpr int commands[] = {7, 0, 8, 10, 11};
+      int render_count = 0;
+      const auto target_it = track->fields.find("cameraTarget");
+      if (target_it != track->fields.end() && target_it->second.tag == ValueTag::Obj &&
+          target_it->second.v.o) {
+        const Value count = jvm.invoke("java.util.resource.GameRef", "getInfo", "(II)I",
+            {Value::make_obj(target_it->second.v.o), Value::make_int(48), Value::make_int(0)}, false);
+        if (count.tag == ValueTag::Int) render_count = count.v.i;
+      }
+      int next_mode = 5;
+      bool advance_internal_camera = false;
+      if (mode == 5 && render_count > 0 && camera_num + 1 < render_count) {
+        next_mode = 5;
+        advance_internal_camera = true;
+      } else {
+        int next = 0;
+        for (int i = 0; i < 5; ++i)
+          if (modes[i] == mode) { next = (i + 1) % 5; break; }
+        next_mode = modes[next];
+      }
+      int command = 7;
+      for (int i = 0; i < 5; ++i)
+        if (modes[i] == next_mode) { command = commands[i]; break; }
+      std::printf("[camera] C target=%s current_mode=%d cam=%d/%d next_mode=%d\n",
+                  track->class_name.c_str(), mode, camera_num, render_count, next_mode);
+      jvm.invoke("java.game.Track", "osdCommand", "(I)V",
+                 {Value::make_obj(track), Value::make_int(command)}, false);
+      std::printf("[camera] C cycle mode=%d command=%d internal_step=%d\n",
+                  next_mode, command, advance_internal_camera ? 1 : 0);
+    } else {
+      std::printf("[camera] C ignored: no active Track state\n");
+    }
+  }
+  was_camera_cycle_down = camera_cycle_down;
   if (brake_down && !brake_was_down) {
     // Stock Vehicle.setCruiseControl(0) is the brake cancellation path. The
     // host must call it on the physical S edge even though S is not allowed to
