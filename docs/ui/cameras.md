@@ -296,12 +296,20 @@ para a causa, não apenas o screenshot final.
   `Track.java` decompilado.
 - O teste de round-trip cockpit/personagem identificou uma falha na seleção da
   câmera principal: a câmera precisa validar o mundo pelo `RenderRef` seguido,
-  não pelo índice CFG do carro. A alteração proposta no selector precisa passar
-  build e a matriz automatizada antes de ser declarada resolvida.
-- A matriz preparada em `build/test_onfoot_camera_modes.ps1` cobre cinco
+  não pelo índice CFG do carro. O selector foi corrigido e compilado; o usuário
+  confirmou manualmente que a câmera agora funciona corretamente. A cobertura
+  automatizada de cada modo/índice continua pendente, pois o harness não
+  avançou os modos C como esperado.
+- O harness em `build/test_onfoot_camera_modes.ps1` pretende percorrer cinco
   índices internos do Baiern e quatro modos externos (TV, follow, chase,
-  inverse-chase). Não prova todos os carros, perfis salvos, câmera Point,
-  Track FREE, cada caminho de evento ou inspeção visual em todas as vistas.
+  inverse-chase), mas a execução atual não é evidência válida dessa matriz:
+  as teclas sintéticas `C` não avançaram o Track conforme esperado e várias
+  tentativas ficaram no mesmo `follow_variant=3`. O teste confirmou que a
+  pose a pé resolveu o `RenderRef` durante esse modo externo e que esse estado
+  foi salvo/restaurado; a seleção por cada índice cockpit continua sem
+  round-trip runtime comprovado. Não prova todos os carros, perfis salvos,
+  câmera Point, Track FREE, cada caminho de evento ou pixels em todas as
+  vistas.
 - Os scripts decompilados em `build/decompiled/` são artefatos locais de
   investigação; a descrição aqui se baseia neles e no host versionado, não em
   uma alegação de equivalência byte a byte com o executável original.

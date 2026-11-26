@@ -421,8 +421,12 @@ press the cruise hotkey.
   and on-foot states, requires a RenderRef for the latter, and checks the
   target's transform in the selected world. The saved cockpit index is restored
   on re-entry to the car.
-- Validation: pending Release build, camera-mode round-trip automation, and
-  documentation reference check. The matrix covers Baiern CFG camera indices
-  0–4 plus Track TV, follow, chase and inverse-chase; it does not prove all
-  vehicles, saved input profiles, Track point/free modes or rendered pixels.
+- Validation: `cmd /c build\build_onfoot_door.bat` passed (Release x64);
+  `py -3 scripts\check_knowledge_refs.py` passed (690 checked, zero errors).
+  The user manually confirmed the updated camera works correctly. The
+  automated mode matrix did not pass: the synthetic C input advanced only one
+  Track transition, so its repeated entries stayed on `follow_variant=3`; it
+  is not evidence for the five cockpit indices or four external modes. Other
+  vehicles, saved input profiles, Track point/free modes and full pixel-level
+  regression coverage remain unverified by automation.
 
