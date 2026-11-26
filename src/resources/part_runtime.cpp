@@ -344,6 +344,7 @@ struct OnFootCameraSave {
   int32_t follow_vehicle = 0, move_id = 0, look_id = 0;
   int follow_variant = 0;
   bool aim_move = false, aim_look = false, camera_attached = false;
+  bool camera_on_foot = false;
   bool script_dist_set = false, cam_pose_init = false, cam_az_set = false;
   bool follow_hold = false;
   float move_off[3]{}, look_off[3]{};
@@ -351,8 +352,6 @@ struct OnFootCameraSave {
   float script_dist_min = 1.f, script_dist_max = 10.f;
   float cam_base_az = 0.f, cam_base_elev = 0.f, orbit_yaw = 0.f, orbit_pitch = 0.f;
   float follow_azimuth = 0.f;
-  float angle_offset = 0.f, angle_gain = 0.f, angle_rate = 0.f, angle_phase = 0.f;
-  bool angle_seed = false;
   bool valid = false;
 };
 struct PlayerPedestrian {
@@ -6536,6 +6535,7 @@ void anchor_onfoot_camera(Object* render) {
   if (!cam || !actor || !actor->live_id) return;
   cam->follow_vehicle = actor->live_id;
   cam->follow_variant = 0;
+  cam->camera_on_foot = true;
   cam->camera_attached = false;
   cam->aim_move = cam->aim_look = false;
   cam->cam_distance = 4.4f;
@@ -6545,11 +6545,6 @@ void anchor_onfoot_camera(Object* render) {
   cam->cam_pose_init = false;
   cam->follow_hold = false;
   cam->orbit_yaw = cam->orbit_pitch = 0.f;
-  // Vehicle camera scripts may leave a native `angle` force active. That
-  // force drives/holds the camera body independently of mouse orbit and can
-  // make on-foot look appear reversed or refuse to follow the pointer.
-  cam->angle_gain = cam->angle_rate = cam->angle_phase = 0.f;
-  cam->angle_seed = false;
   // Eye behind the actor: the mesh faces +Z, so the camera sits on +pi.
   cam->follow_azimuth = player_ped.yaw + 3.141592653589793f;
 }
@@ -6566,6 +6561,7 @@ void save_onfoot_camera(OnFootCameraSave& save, Object* render) {
   save.aim_move = cam->aim_move;
   save.aim_look = cam->aim_look;
   save.camera_attached = cam->camera_attached;
+  save.camera_on_foot = cam->camera_on_foot;
   save.script_dist_set = cam->script_dist_set;
   save.cam_pose_init = cam->cam_pose_init;
   save.cam_az_set = cam->cam_az_set;
@@ -6581,11 +6577,6 @@ void save_onfoot_camera(OnFootCameraSave& save, Object* render) {
   save.orbit_yaw = cam->orbit_yaw;
   save.orbit_pitch = cam->orbit_pitch;
   save.follow_azimuth = cam->follow_azimuth;
-  save.angle_offset = cam->angle_offset;
-  save.angle_gain = cam->angle_gain;
-  save.angle_rate = cam->angle_rate;
-  save.angle_phase = cam->angle_phase;
-  save.angle_seed = cam->angle_seed;
   save.valid = true;
 }
 
@@ -6600,6 +6591,7 @@ void restore_onfoot_camera(OnFootCameraSave& save) {
   cam->aim_move = save.aim_move;
   cam->aim_look = save.aim_look;
   cam->camera_attached = save.camera_attached;
+  cam->camera_on_foot = save.camera_on_foot;
   cam->follow_hold = save.follow_hold;
   cam->script_dist_set = save.script_dist_set;
   cam->cam_pose_init = save.cam_pose_init;
@@ -6615,11 +6607,6 @@ void restore_onfoot_camera(OnFootCameraSave& save) {
   cam->orbit_yaw = save.orbit_yaw;
   cam->orbit_pitch = save.orbit_pitch;
   cam->follow_azimuth = save.follow_azimuth;
-  cam->angle_offset = save.angle_offset;
-  cam->angle_gain = save.angle_gain;
-  cam->angle_rate = save.angle_rate;
-  cam->angle_phase = save.angle_phase;
-  cam->angle_seed = save.angle_seed;
   save.valid = false;
   std::fprintf(stderr, "[onfoot] camera back on vehicle (follow=%d)\n",
                cam->follow_vehicle);

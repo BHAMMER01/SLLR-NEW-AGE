@@ -13,7 +13,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -687,7 +686,7 @@ bool gameref_toggle_free_camera() {
 
 bool gameref_cycle_vehicle_camera() {
   GameRefState* cam = fullscreen_script_camera();
-  if (!cam || !cam->follow_vehicle || cam->camera_free) return false;
+  if (!cam || !cam->follow_vehicle || cam->camera_free || cam->camera_on_foot) return false;
   cam->follow_variant = cam->follow_variant == 0 ? 3
                       : cam->follow_variant == 3 ? 4 : 0;
   cam->camera_mode_override = true;
@@ -940,6 +939,40 @@ static bool driving_camera_pose(GameRefState& cam, float* eye, float* at,
     if (up) std::copy_n(frame.data() + 4, 3, up);
     return true;
   }
+  if (cam.camera_on_foot && target->kind == GameRefKind::RenderRef) {
+    // The player camera is a direct orbit around the pedestrian. Keep it out
+    // of the car camera's spring, held-angle, and follow-heading code paths.
+    const double distance = std::clamp(cam.cam_distance > 0.f ? cam.cam_distance : 4.4,
+                                       2.4, 8.5);
+    const double base_lift = 1.75;
+    const double azimuth = double(cam.follow_azimuth) + cam.orbit_yaw;
+    const double elevation = std::clamp(std::atan2(base_lift, distance) +
+                                        double(cam.orbit_pitch), -1.2, 1.2);
+    const double radius = std::hypot(distance, base_lift);
+    const Vec3 focus{frame[12], frame[13] + 1.55, frame[14]};
+    const Vec3 offset{std::sin(azimuth) * std::cos(elevation) * radius,
+                      std::sin(elevation) * radius,
+                      std::cos(azimuth) * std::cos(elevation) * radius};
+    const Vec3 desired = focus + offset;
+    at[0] = float(focus.x); at[1] = float(focus.y); at[2] = float(focus.z);
+    eye[0] = float(desired.x); eye[1] = float(desired.y); eye[2] = float(desired.z);
+    float delta[3] = {eye[0] - at[0], eye[1] - at[1], eye[2] - at[2]};
+    SceneSphereHit hit;
+    // Ignore floor and ceiling triangles; wall collisions still keep the
+    // camera out of buildings without making it pop over pavement seams.
+    if (scene_instances_sweep_sphere(at, delta, .15f, hit, .65f)) {
+      const float fraction = std::clamp(hit.fraction - .03f, .15f, 1.f);
+      for (int i = 0; i < 3; ++i) eye[i] = at[i] + delta[i] * fraction;
+    }
+    if (up) { up[0] = 0.f; up[1] = 1.f; up[2] = 0.f; }
+    if (dt > 0.f) {
+      std::copy_n(eye, 3, cam.pos);
+      cam.ypr[0] = std::atan2(eye[0] - at[0], eye[2] - at[2]);
+      cam.ypr[1] = std::atan2(at[1] - eye[1],
+                              std::hypot(eye[0] - at[0], eye[2] - at[2]));
+    }
+    return true;
+  }
   if (attached) {
     target_point(&cam, cam.move_id, cam.move_off, eye);
     target_point(&cam, cam.look_id, cam.look_off, at);
@@ -1012,22 +1045,6 @@ static bool driving_camera_pose(GameRefState& cam, float* eye, float* at,
     std::copy_n(eye, 3, cam.pos);
     cam.ypr[0] = std::atan2(eye[0] - at[0], eye[2] - at[2]);
     cam.ypr[1] = std::atan2(at[1] - eye[1], std::hypot(eye[0] - at[0], eye[2] - at[2]));
-  }
-  if (target->kind == GameRefKind::RenderRef &&
-      std::getenv("SLRR_CAMERA_TRACE")) {
-    static double trace_seconds = 0.0;
-    trace_seconds += std::max(dt, 0.f);
-    if (trace_seconds >= .25) {
-      trace_seconds = 0.0;
-      std::fprintf(stderr,
-                   "[camera-trace] pose cam=%d target=%d free=%d follow=%d "
-                   "orbit=(%.4f,%.4f) hold=%d gain=%.3f eye=(%.3f,%.3f,%.3f) "
-                   "at=(%.3f,%.3f,%.3f)\n",
-                   cam.cam_seq, target_id, cam.camera_free ? 1 : 0,
-                   cam.follow_vehicle, cam.orbit_yaw, cam.orbit_pitch,
-                   cam.follow_hold ? 1 : 0, cam.angle_gain,
-                   eye[0], eye[1], eye[2], at[0], at[1], at[2]);
-    }
   }
   return true;
 }
@@ -1209,29 +1226,15 @@ void gameref_orbit_world_camera(float yaw_delta, float pitch_delta, float key_ya
   ay += key_pitch;
   GameRefState* cam = fullscreen_script_camera();
   if (cam && (cam->camera_free || (cam->follow_vehicle && cam->cockpit_index < 0))) {
-    // Win32 raw mouse deltas are +right/+down. Free flight changes the view
-    // direction directly; follow mode changes the eye position around its
-    // target. Those coordinate frames have opposite signs, so sharing one
-    // sign made the pedestrian orbit move opposite to the mouse.
-    const float mouse_sign = cam->camera_free ? -1.f : 1.f;
-    const float old_yaw = cam->orbit_yaw;
-    const float old_pitch = cam->orbit_pitch;
+    // Free flight rotates its view direction. Follow cameras orbit their eye
+    // around the target, so their yaw has the opposite handedness. The on-foot
+    // pitch remains positive: dragging down raises the orbit eye and looks down.
+    const float yaw_sign = (cam->camera_free || cam->camera_on_foot) ? -1.f : 1.f;
+    const float pitch_sign = cam->camera_free ? -1.f : 1.f;
     cam->orbit_yaw = std::remainder(
-        cam->orbit_yaw + mouse_sign * in.mouse_dx * .003f, 6.2831853f);
+        cam->orbit_yaw + yaw_sign * in.mouse_dx * .003f, 6.2831853f);
     cam->orbit_pitch = std::clamp(
-        cam->orbit_pitch + mouse_sign * in.mouse_dy * .003f, -1.1f, 1.1f);
-    if (std::getenv("SLRR_CAMERA_TRACE") &&
-        (std::fabs(in.mouse_dx) > 1e-4f || std::fabs(in.mouse_dy) > 1e-4f)) {
-      std::fprintf(stderr,
-                   "[camera-trace] input dx=%.1f dy=%.1f sign=%.0f cam=%d "
-                   "free=%d follow=%d kind=%d orbit=(%.4f,%.4f)->(%.4f,%.4f) "
-                   "gain=%.3f hold=%d\n",
-                   in.mouse_dx, in.mouse_dy, mouse_sign, cam->cam_seq,
-                   cam->camera_free ? 1 : 0, cam->follow_vehicle,
-                   static_cast<int>(cam->kind), old_yaw, old_pitch,
-                   cam->orbit_yaw, cam->orbit_pitch, cam->angle_gain,
-                   cam->follow_hold ? 1 : 0);
-    }
+        cam->orbit_pitch + pitch_sign * in.mouse_dy * .003f, -1.1f, 1.1f);
   }
   in.mouse_dx = in.mouse_dy = 0.f;
   if (!cam || cam->cockpit_index >= 0) return;

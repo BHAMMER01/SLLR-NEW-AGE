@@ -129,7 +129,8 @@ struct GameRefState {
   // itself camera relative; deriving the azimuth from that heading would make
   // the camera chase its own yaw. Cars keep deriving it from the body.
   float follow_azimuth = 0.f;
-  bool camera_free = false, camera_autozoom = false, camera_attached = false;
+  bool camera_free = false, camera_on_foot = false;
+  bool camera_autozoom = false, camera_attached = false;
   bool camera_mode_override = false;
   float camera_roll = 0.f;
   // `angle offset gain rate` (native handler 0x43af6d, update 0x439d3c): goal
