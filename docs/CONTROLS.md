@@ -105,6 +105,25 @@ pelo carro antes de seguir pelos demais modos. F1–F4 são consumidas pelo host
 nunca mudam a câmera. F5 continua sendo olhar para trás; seu comando original
 de chase invertida também é acessível pelo ciclo de `C`.
 
+### Câmera do personagem a pé
+
+| Tecla/gesto | Ação |
+| --- | --- |
+| `F` | Sair do carro / voltar ao carro |
+| Mouse | Orbitar a câmera em torno do personagem, sem segurar botão |
+| `W` / `A` / `S` / `D` | Andar |
+| `Shift` | Correr |
+| `Space` | Pular |
+| `C` | Ignorado a pé; mantém a câmera presa ao personagem |
+| `Delete` | Alternar para a câmera de voo; personagem e carro ficam parados |
+
+A câmera a pé usa pose direta própria; não reutiliza o amortecimento nem os
+comandos de ângulo herdados da câmera do carro. Yaw e pitch têm sinais
+independentes para manter o mouse natural após a conversão dos eixos para
+BGFX. A colisão considera paredes e filtra piso/teto para evitar saltos nas
+emendas do terreno. Ao voltar ao carro, o estado salvo da câmera veicular é
+restaurado.
+
 ### Câmera de voo New Age
 
 | Tecla | Ação durante o voo |

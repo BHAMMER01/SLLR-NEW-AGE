@@ -45,6 +45,10 @@ the view, and the mouse wheel selects a speed multiplier from `x0.01` to
 `x512`. `F1` toggles photo mode; the host suppresses the OSD and the separate
 minimap preview in this mode.
 
+For the engine-level camera model—including Track modes, car CFG views, the
+on-foot and flight cameras, preview viewports, ownership, and object lifetime—
+see [docs/ui/cameras.md](docs/ui/cameras.md).
+
 SLRR New Age brings the game's scripts, cars, and resources into a modern,
 independent engine. It reimplements resource loading, script execution,
 rendering, the interface, audio integration and the native functions those
@@ -101,6 +105,7 @@ simulation unchanged; it is not enabled by default.
 | Frame-time/CPU/RAM/GPU monitor | Working | `scripts/monitor_slrr.ps1` |
 | Free-flight controls and speed levels | Implemented; wheel behavior confirmed | Release build opened in ValoCity with Vulkan; multiplier readout implemented; end points not separately measured |
 | Photo mode and minimap hiding | Implemented | OSD and separate viewport-12 map preview are both filtered; final F1 visual check remains |
+| On-foot character camera | Implemented and user-confirmed | Dedicated pedestrian orbit, separate mouse-axis handling and shoulder anchor; Release Vulkan build opened in ValoCity with VSync enabled |
 | Physics parity with the original game | In progress | Must be measured before claiming compatibility |
 | Full career and long-session behavior | In progress | Not yet end-to-end validated |
 
@@ -169,6 +174,13 @@ Engine loops use the scripts' SFX tables. Music playlists currently play in sequ
   vehicle OSD and the city's separate viewport-12 minimap preview. `C` is the
   Track camera selector; see [docs/CONTROLS.md](docs/CONTROLS.md) for the full
   mapping and validation notes.
+- Reworked the on-foot character camera as a dedicated direct orbit instead
+  of reusing the vehicle follow spring. Mouse yaw and pitch now use separate
+  signs for the game-to-BGFX camera transform; the camera keeps its shoulder
+  aim and filters floor/ceiling triangles during collision checks. Returning
+  to the car restores its saved camera state. The user confirmed the Release
+  Vulkan build now turns as intended; see [docs/CONTROLS.md](docs/CONTROLS.md)
+  and [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md).
 - Added GPS tile textures and markers, sun flares, DDS mipmaps and the Test Track's separate diffuse and decal UV channels. The Invictus Racing 500 logo appears on the circuit.
 - Corrected the stock instrument panel's proportions and translucent background.
 - Connected gameplay options to gearbox mode, steering help, ABS, launch ASR, units, damage and cockpit movement. The stock menu selectors and sliders save their values automatically.

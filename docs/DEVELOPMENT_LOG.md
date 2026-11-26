@@ -20,6 +20,35 @@ Copy this template for each meaningful change:
 - Limitations: known gaps, regressions or follow-up work.
 ```
 
+## 2026-11-25 — Isolate and correct the on-foot camera orbit
+
+- Scope: player-pedestrian camera pose, orbit input and camera collision only;
+  vehicle handling and the simulation contract are unchanged.
+- Intent: make mouse movement intuitive in both axes, keep the camera locked
+  to the pedestrian, and stop camera motion from popping at floor seams.
+- Trace: an opt-in runtime trace showed the active fullscreen camera following
+  the live `RenderRef`; raw mouse deltas reached that camera and updated its
+  orbit. `angle_gain` and `follow_hold` were both zero, disproving the earlier
+  inherited-angle-force hypothesis. The renderer converts world Z before
+  constructing a left-handed BGFX view; the shared car follow path also applied
+  its spring and collision sweep to the pedestrian.
+- Changes: added `GameRefState::camera_on_foot` and a dedicated direct orbit
+  branch for the pedestrian. It bypasses car follow smoothing/held-angle
+  behavior, uses separate yaw and pitch signs, keeps the 1.55 m shoulder aim
+  and 4.4 m start distance, and excludes floor/ceiling triangles from camera
+  collision while retaining wall collision. `OnFootCameraSave` restores the
+  prior camera mode; `C` cannot switch away from the pedestrian.
+- Build: `cmake --build build --config Release --target slrr_host --parallel 8`
+  passed.
+- Runtime validation: Release `slrr_host.exe` opened ValoCity with Vulkan and
+  VSync enabled. The user confirmed that the camera now turns as intended.
+  The preceding no-VSync run showed screen artifacts during movement; the
+  latest run used VSync, but the artifacts were not captured separately for QA.
+- Evidence: raw camera trace stayed under ignored `build/Release/` files;
+  temporary trace code was removed after identifying the active path.
+- Limitations: no automated visual regression fixture exists for pedestrian
+  orbit or camera collision.
+
 ## 2026-11-25 — Cruise hotkey isolated from brake
 
 Follow-up: braking now invokes `java.game.Vehicle.setCruiseControl(0)` on the
@@ -372,3 +401,28 @@ press the cruise hotkey.
 - Runtime: the Vulkan New Age build opened ValoCity. Mouse polarity, the
   raised shoulder anchor and no-motion input while flying need in-game
   confirmation in the latest relaunched build.
+## 2026-11-25 — Document camera architecture and cockpit-to-ped ownership
+
+- Scope: camera lifecycle and selection, Track modes, vehicle CFG cameras,
+  pedestrian orbit, New Age free flight, auxiliary preview cameras and input
+  ownership. No vehicle physics or stock scripts changed.
+- Documentation: added `docs/ui/cameras.md` as the end-to-end camera reference;
+  indexed it from `docs/README.md`, linked it from `README.md`, and connected
+  it to `docs/ui/notes.md`. It records object creation, activation, reuse,
+  hiding/destruction, camera selection, pose dispatch, input routes and the
+  per-mode validation matrix.
+- Trace: `fullscreen_script_camera` had a special world-ownership lookup for
+  cockpit cameras, but did not resolve a followed target for `camera_on_foot`.
+  Leaving a car from a cockpit view clears `cockpit_index` and retargets the
+  camera to a pedestrian `RenderRef`; without using that actor to validate
+  world ancestry, the main-camera selector rejected the camera and the frame
+  retained only the clear color and HUD.
+- Change: the selector now resolves the followed live target for both cockpit
+  and on-foot states, requires a RenderRef for the latter, and checks the
+  target's transform in the selected world. The saved cockpit index is restored
+  on re-entry to the car.
+- Validation: pending Release build, camera-mode round-trip automation, and
+  documentation reference check. The matrix covers Baiern CFG camera indices
+  0–4 plus Track TV, follow, chase and inverse-chase; it does not prove all
+  vehicles, saved input profiles, Track point/free modes or rendered pixels.
+

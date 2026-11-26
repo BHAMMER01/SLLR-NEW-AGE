@@ -39,6 +39,34 @@ rather than adding VM exceptions for a specific car or screen. Java changes
 must remain within the scope authorized by the user and must be included in
 the distributed patch when needed.
 
+## Legacy-game behavior changes: trace before editing
+
+SLRR's 2003 code often dispatches one behavior through several script methods,
+native commands, shared `GameRefState` fields, and renderer paths. Before
+changing any existing game behavior, trace the complete path instead of
+patching the first matching function:
+
+1. Find every script/decompiled call site, host input binding, native handler,
+   state writer, state reader, and final runtime/render consumer for the
+   behavior. Follow the same path the game actually executes.
+2. List every mode/index/variant and lifecycle transition that can select that
+   path. For cameras, include each Track mode, every car CFG camera index,
+   mouse/key/controller bindings, and the camera chosen by the main viewport.
+3. Trace entry, per-frame ownership, exit, and return. Record all state that is
+   mutated and must be restored, including sentinel values and type-specific
+   validity (for example, a car camera index is invalid for a pedestrian
+   `RenderRef`). Check fallback paths when a specialized path declines input.
+4. Explain the coordinate spaces and transforms at each boundary before
+   changing signs or axes. A value that is correct in game coordinates may be
+   reversed or invalid after a renderer, script, or native conversion.
+5. Validate the full mode matrix with runtime logs or automation: select each
+   mode/index, enter the behavior, verify the active target and pose, exit,
+   and confirm the original mode/index/state is restored. One successful
+   default-mode run does not establish compatibility for the others.
+6. Do not present a plausible explanation as a cause until runtime evidence
+   supports it. If the evidence disproves a hypothesis, remove it from the
+   implementation and record the actual cause and remaining gaps.
+
 Update the relevant documentation whenever a contract or responsibility changes.
 Report compilation and in-game validation separately; neither result alone
 establishes complete compatibility.

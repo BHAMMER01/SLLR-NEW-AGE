@@ -3,6 +3,8 @@
 Verified notes on OSD drawing, viewports and cameras, the garage paint
 booth and input, moved from the knowledge base. Script-side section and
 dialog behaviour is in [../scripting/runtime.md](../scripting/runtime.md).
+The end-to-end camera architecture, modes, lifecycle and validation matrix
+are documented in [cameras.md](cameras.md).
 
 ## Three-decimal elapsed time (#131)
 

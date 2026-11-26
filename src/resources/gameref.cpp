@@ -634,17 +634,25 @@ GameRefState* fullscreen_script_camera() {
   for (GameRefState* c : gameref_active_cameras()) {
     if (!c || !c->cam_active) continue;
     GameRefState* vp = c->viewport ? gameref_get(c->viewport) : nullptr;
-    const GameRefState* car = c->cockpit_index >= 0 ? gameref_find_live(c->follow_vehicle)
-                                                    : nullptr;
-    if (c->cockpit_index >= 0 && (!vp || !vp->vp_active || !car)) continue;
+    const GameRefState* target = (c->cockpit_index >= 0 || c->camera_on_foot)
+        ? gameref_find_live(c->follow_vehicle) : nullptr;
+    if (c->cockpit_index >= 0 && (!vp || !vp->vp_active || !target)) continue;
+    // The on-foot camera reuses the selected world camera, but its follow
+    // target is a RenderRef rather than a chassis. Resolve world ownership
+    // from that actor; checking the camera object's own key loses the main
+    // camera when leaving the car from a cockpit view.
+    if (c->camera_on_foot &&
+        (!target || target->kind != GameRefKind::RenderRef)) continue;
     if (void* world = scene_instances_world()) {
       // A local Dummy world (GPS, inventory, selector) never supplies the
       // main scene camera, even if its viewport fills the screen. Conversely,
       // the scene camera remains the main camera when scripts resize its view.
-      // The cockpit camera (car "render") has no parent of its own: it sits
-      // in the world of the car it rides.
+      // A cockpit camera (car "render") has no parent of its own, so its
+      // followed chassis supplies world ownership. The on-foot orbit reuses
+      // the selected camera but follows a RenderRef; that actor supplies the
+      // world ownership while the pedestrian is active.
       float matrix[16];
-      if (!scene_instance_transform(car ? car->key : c->key, world, matrix)) continue;
+      if (!scene_instance_transform(target ? target->key : c->key, world, matrix)) continue;
     } else if (vp && (vp->vp_w < 0.99f || vp->vp_h < 0.99f)) continue;
     // Osd.show() adds a second fullscreen camera (priority 2, parent = the
     // Osd) after the scene camera. It exists for 3D widgets; those are drawn

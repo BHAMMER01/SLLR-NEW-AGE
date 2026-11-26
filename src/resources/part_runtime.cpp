@@ -342,6 +342,7 @@ std::unordered_map<void*, PedCrowd> crowds;
 struct OnFootCameraSave {
   void* key = nullptr;
   int32_t follow_vehicle = 0, move_id = 0, look_id = 0;
+  int cockpit_index = -1;
   int follow_variant = 0;
   bool aim_move = false, aim_look = false, camera_attached = false;
   bool camera_on_foot = false;
@@ -6535,6 +6536,10 @@ void anchor_onfoot_camera(Object* render) {
   if (!cam || !actor || !actor->live_id) return;
   cam->follow_vehicle = actor->live_id;
   cam->follow_variant = 0;
+  // RenderRefs have no car camera array. Keeping the previous cockpit index
+  // makes part_camera_pose reject the pedestrian and falls through to the
+  // unanchored script-camera pose (the reported "limbo" view).
+  cam->cockpit_index = -1;
   cam->camera_on_foot = true;
   cam->camera_attached = false;
   cam->aim_move = cam->aim_look = false;
@@ -6557,6 +6562,7 @@ void save_onfoot_camera(OnFootCameraSave& save, Object* render) {
   save.follow_vehicle = cam->follow_vehicle;
   save.move_id = cam->move_id;
   save.look_id = cam->look_id;
+  save.cockpit_index = cam->cockpit_index;
   save.follow_variant = cam->follow_variant;
   save.aim_move = cam->aim_move;
   save.aim_look = cam->aim_look;
@@ -6578,6 +6584,9 @@ void save_onfoot_camera(OnFootCameraSave& save, Object* render) {
   save.orbit_pitch = cam->orbit_pitch;
   save.follow_azimuth = cam->follow_azimuth;
   save.valid = true;
+  std::fprintf(stderr,
+               "[onfoot] saved vehicle camera follow=%d variant=%d cockpit=%d\n",
+               save.follow_vehicle, save.follow_variant, save.cockpit_index);
 }
 
 void restore_onfoot_camera(OnFootCameraSave& save) {
@@ -6587,6 +6596,7 @@ void restore_onfoot_camera(OnFootCameraSave& save) {
   cam->follow_vehicle = save.follow_vehicle;
   cam->move_id = save.move_id;
   cam->look_id = save.look_id;
+  cam->cockpit_index = save.cockpit_index;
   cam->follow_variant = save.follow_variant;
   cam->aim_move = save.aim_move;
   cam->aim_look = save.aim_look;
@@ -6608,8 +6618,9 @@ void restore_onfoot_camera(OnFootCameraSave& save) {
   cam->orbit_pitch = save.orbit_pitch;
   cam->follow_azimuth = save.follow_azimuth;
   save.valid = false;
-  std::fprintf(stderr, "[onfoot] camera back on vehicle (follow=%d)\n",
-               cam->follow_vehicle);
+  std::fprintf(stderr,
+               "[onfoot] camera restored follow=%d variant=%d cockpit=%d\n",
+               cam->follow_vehicle, cam->follow_variant, cam->cockpit_index);
 }
 
 void place_player_pedestrian() {
@@ -6717,10 +6728,13 @@ void tick_player_pedestrian(double seconds) {
       const float dy = cam ? cam->pos[1] - player_ped.y : 0.f;
       const float dz = cam ? cam->pos[2] - player_ped.z : 0.f;
       std::fprintf(stderr,
-                   "[onfoot-trace] follow=%d actor=%d eye=(%.2f,%.2f,%.2f) "
+                   "[onfoot-trace] follow=%d actor=%d cockpit=%d onfootcam=%d "
+                   "eye=(%.2f,%.2f,%.2f) "
                    "ped=(%.2f,%.2f,%.2f) distance=%.2f camyaw=%.2f pedyaw=%.2f "
                    "input=(%.0f,%.0f run=%d)\n",
                    cam ? cam->follow_vehicle : 0, actor ? actor->live_id : 0,
+                   cam ? cam->cockpit_index : -2,
+                   cam && cam->camera_on_foot ? 1 : 0,
                    cam ? cam->pos[0] : 0.f, cam ? cam->pos[1] : 0.f,
                    cam ? cam->pos[2] : 0.f, player_ped.x, player_ped.y,
                    player_ped.z, std::sqrt(dx * dx + dy * dy + dz * dz),
