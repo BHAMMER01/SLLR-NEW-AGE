@@ -181,6 +181,7 @@ void main()
         return;
     }
 	vec3 n = normalize(v_normal);
+	bool skinnedCharacter = v_tint.w < 0.5;
 	float ndl = max(abs(dot(n, normalize(vec3(0.35, 0.85, 0.45)))), 0.22);
 	vec4 tex = texture2D(s_texColor, mapUv(uvSet(u_lightmap.y, v_texcoord0, v_texcoord1, v_texcoord2), u_meshBaseUv));
 	if (u_lightmap.w > 0.5) {
@@ -244,9 +245,17 @@ void main()
 	float use = step(0.5, u_lightmap.x);
 	light = mix(light, 1.0, use);
 	bake = mix(vec3(1.0, 1.0, 1.0), bake, use);
-	float visibility = use < 0.5 ? sceneShadowVisibility(v_staticShadow, v_worldPos) : 1.0;
+	vec3 shadowWorld = v_worldPos;
+	if (skinnedCharacter) shadowWorld += n * 0.05;
+	// The animated skin depth map self-occludes at this resolution and leaves
+	// broad false shade on the body. Skinned actors still cast shadows onto the
+	// world, but do not receive the scene map on their own surface.
+	float visibility = use < 0.5 && !skinnedCharacter
+		? sceneShadowVisibility(v_staticShadow, shadowWorld) : 1.0;
 	float carVisibility = 1.0;
-	if (u_carDepthParams.x > 0.5) {
+	// The vehicle depth map describes the controlled car, not the pedestrian.
+	// Applying it to the skin made the player darken when moving around the car.
+	if (!skinnedCharacter && u_carDepthParams.x > 0.5) {
 		vec3 p = mul(u_carDepthMtx, vec4(v_worldPos, 1.0)).xyz;
 		float edge = min(min(p.x, 1.0 - p.x), min(p.y, 1.0 - p.y));
 		if (edge > u_carDepthParams.y && p.z > 0.0 && p.z < 1.0) {
@@ -262,10 +271,13 @@ void main()
 	float sunVisibility = u_staticShadowParams.w > 0.5 ? 1.0 : visibility;
 	float localVisibility = u_staticShadowParams.w > 0.5 ? visibility : 1.0;
 	vec3 illumination = vec3(light, light, light) * sunVisibility * mix(0.55, 1.0, carVisibility);
-	if (u_sunDir.w < -0.5) illumination = u_sunAmb.rgb*ambientVisibility(gl_FragCoord.xy);
+	float ambientAo = skinnedCharacter ? 1.0 : ambientVisibility(gl_FragCoord.xy);
+	if (u_sunDir.w < -0.5) illumination = u_sunAmb.rgb*ambientAo;
 	else if (u_sunDir.w > 0.5 && use < 0.5) {
 		float direct = max(dot(n, normalize(u_sunDir.xyz)), 0.0);
-		illumination = u_sunAmb.rgb*ambientVisibility(gl_FragCoord.xy) + u_sunDiff.rgb * direct * min(sunVisibility, carVisibility);
+		vec3 ambientLight = u_sunAmb.rgb*ambientAo;
+		if (skinnedCharacter) ambientLight += u_sunDiff.rgb * 0.22;
+		illumination = ambientLight + u_sunDiff.rgb * direct * min(sunVisibility, carVisibility);
 	}
 	if (u_localLight.w > 0.0) {
 		vec3 delta = u_localLight.xyz - v_worldPos;

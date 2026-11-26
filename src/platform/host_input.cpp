@@ -379,6 +379,15 @@ void host_input_update_controller(Object* controller, float dt) {
     in.drive_clutch = in.drive_shift = in.drive_nitro = 0.f;
     in.drive_handbrake = in.drive_reverse = in.drive_horn = false;
   }
+  // Flight owns WASD/Shift/Ctrl. Keep both player actors inert even when the
+  // drone was toggled after this frame's input poll or a bench-drive override.
+  if (in.free_camera_mode) {
+    in.drive_steer = in.drive_throttle = in.drive_brake = 0.f;
+    in.drive_clutch = in.drive_shift = in.drive_nitro = 0.f;
+    in.drive_handbrake = in.drive_reverse = in.drive_horn = false;
+    in.pedestrian_x = in.pedestrian_z = 0.f;
+    in.pedestrian_run = in.pedestrian_jump = false;
+  }
 }
 
 void host_input_create_hotkey(Jvm& jvm, Object* key, Object* handler,
@@ -419,7 +428,7 @@ bool host_input_allow_ui(int id, bool pressed) {
 void host_input_check_hotkeys(Jvm& jvm, Object* controller, Object* focus) {
   const bool capturing = captures_binding(focus);
   const bool onfoot_f_down = keys[0x21]; // DirectInput scan 0x21 = F
-  if (!capturing && onfoot_f_down && !was_onfoot_f_down)
+  if (!capturing && !g_input.free_camera_mode && onfoot_f_down && !was_onfoot_f_down)
     part_toggle_player_pedestrian();
   was_onfoot_f_down = onfoot_f_down;
   // Native test bridge for the Brazilian/MW_Mod garage jack.  The patched
@@ -453,7 +462,13 @@ void host_input_check_hotkeys(Jvm& jvm, Object* controller, Object* focus) {
                 g_input.free_camera_mode ? 1 : 0, capturing ? 1 : 0);
   camera_c_logged = camera_cycle_down;
   if (camera_cycle_down && !was_camera_cycle_down && !capturing &&
-      !g_input.free_camera_mode) {
+      !g_input.free_camera_mode && g_input.player_on_foot) {
+    // C selects the car camera (follow/TV/chase/cockpit) and would take the
+    // view off the pedestrian. On foot the camera stays on the actor and the
+    // mouse owns the orbit.
+    std::printf("[camera] C ignored: on foot, camera stays on the pedestrian\n");
+  } else if (camera_cycle_down && !was_camera_cycle_down && !capturing &&
+             !g_input.free_camera_mode) {
     const Value actual = jvm.get_static("java.game.GameLogic", "actualState");
     Object* track = actual.tag == ValueTag::Obj ? actual.v.o : nullptr;
     if (track) {

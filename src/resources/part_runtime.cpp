@@ -351,6 +351,8 @@ struct OnFootCameraSave {
   float script_dist_min = 1.f, script_dist_max = 10.f;
   float cam_base_az = 0.f, cam_base_elev = 0.f, orbit_yaw = 0.f, orbit_pitch = 0.f;
   float follow_azimuth = 0.f;
+  float angle_offset = 0.f, angle_gain = 0.f, angle_rate = 0.f, angle_phase = 0.f;
+  bool angle_seed = false;
   bool valid = false;
 };
 struct PlayerPedestrian {
@@ -3225,7 +3227,8 @@ DriveRefresh configure_drive(Object *chassis, Record &rec, bool controlled) {
   refresh.ai_steer = ai.steer;
   if (rec.driving_options_revision != host_driving_options_revision())
     apply_driving_options(rec);
-  const bool controls = autonomous || !osd_has_modal();
+  const bool controls = autonomous ||
+      (!osd_has_modal() && !host_input().free_camera_mode);
   refresh.controls = controls;
   if (autonomous) {
     rec.steering_input = rec.steering_request = ai.steer;
@@ -6535,13 +6538,18 @@ void anchor_onfoot_camera(Object* render) {
   cam->follow_variant = 0;
   cam->camera_attached = false;
   cam->aim_move = cam->aim_look = false;
-  cam->cam_distance = 3.6f;
+  cam->cam_distance = 4.4f;
   cam->script_dist_set = true;
-  cam->script_dist_min = 1.2f;
-  cam->script_dist_max = 6.5f;
+  cam->script_dist_min = 2.4f;
+  cam->script_dist_max = 8.5f;
   cam->cam_pose_init = false;
   cam->follow_hold = false;
   cam->orbit_yaw = cam->orbit_pitch = 0.f;
+  // Vehicle camera scripts may leave a native `angle` force active. That
+  // force drives/holds the camera body independently of mouse orbit and can
+  // make on-foot look appear reversed or refuse to follow the pointer.
+  cam->angle_gain = cam->angle_rate = cam->angle_phase = 0.f;
+  cam->angle_seed = false;
   // Eye behind the actor: the mesh faces +Z, so the camera sits on +pi.
   cam->follow_azimuth = player_ped.yaw + 3.141592653589793f;
 }
@@ -6573,6 +6581,11 @@ void save_onfoot_camera(OnFootCameraSave& save, Object* render) {
   save.orbit_yaw = cam->orbit_yaw;
   save.orbit_pitch = cam->orbit_pitch;
   save.follow_azimuth = cam->follow_azimuth;
+  save.angle_offset = cam->angle_offset;
+  save.angle_gain = cam->angle_gain;
+  save.angle_rate = cam->angle_rate;
+  save.angle_phase = cam->angle_phase;
+  save.angle_seed = cam->angle_seed;
   save.valid = true;
 }
 
@@ -6602,6 +6615,11 @@ void restore_onfoot_camera(OnFootCameraSave& save) {
   cam->orbit_yaw = save.orbit_yaw;
   cam->orbit_pitch = save.orbit_pitch;
   cam->follow_azimuth = save.follow_azimuth;
+  cam->angle_offset = save.angle_offset;
+  cam->angle_gain = save.angle_gain;
+  cam->angle_rate = save.angle_rate;
+  cam->angle_phase = save.angle_phase;
+  cam->angle_seed = save.angle_seed;
   save.valid = false;
   std::fprintf(stderr, "[onfoot] camera back on vehicle (follow=%d)\n",
                cam->follow_vehicle);
@@ -6646,8 +6664,9 @@ void tick_player_pedestrian(double seconds) {
   if (!node || !rec) { leave_player_pedestrian(); return; }
   const float dt = static_cast<float>(std::clamp(seconds, 0.0, 0.05));
   auto& input = host_input();
-  float x = std::clamp(input.pedestrian_x, -1.f, 1.f);
-  float z = std::clamp(input.pedestrian_z, -1.f, 1.f);
+  const bool actor_controls = !input.free_camera_mode;
+  float x = actor_controls ? std::clamp(input.pedestrian_x, -1.f, 1.f) : 0.f;
+  float z = actor_controls ? std::clamp(input.pedestrian_z, -1.f, 1.f) : 0.f;
   const float input_len = std::hypot(x, z);
   if (input_len > 1.f) { x /= input_len; z /= input_len; }
   // The camera yaw looks down -Z; the human mesh faces +Z, so its stored yaw
@@ -6661,7 +6680,8 @@ void tick_player_pedestrian(double seconds) {
   float dz = rz * x + fz * z;
   const float length = std::hypot(dx, dz);
   if (length > 1.f) { dx /= length; dz /= length; }
-  const float speed = input.pedestrian_run ? 5.2f : 2.4f;
+  const bool running = actor_controls && input.pedestrian_run;
+  const float speed = running ? 5.2f : 2.4f;
   dx *= speed * dt; dz *= speed * dt;
   if (std::fabs(dx) + std::fabs(dz) > 1e-6f) {
     float start[3] = {player_ped.x, player_ped.y + 0.55f, player_ped.z};
@@ -6675,7 +6695,7 @@ void tick_player_pedestrian(double seconds) {
     player_ped.z += dz;
     player_ped.yaw = std::atan2(dx, dz);
   }
-  const bool jump = input.pedestrian_jump;
+  const bool jump = actor_controls && input.pedestrian_jump;
   if (jump && !player_ped.jump_was_down && player_ped.grounded) {
     player_ped.vertical_speed = 5.f;
     player_ped.grounded = false;
@@ -6694,8 +6714,8 @@ void tick_player_pedestrian(double seconds) {
     player_ped.grounded = false;
   }
   if (player_ped.kind.anim) {
-    const float gait = length > 1e-3f && dt > 0.f
-        ? (input.pedestrian_run ? 1.65f : 1.f) : 0.f;
+    const float gait = actor_controls && length > 1e-3f && dt > 0.f
+        ? (running ? 1.65f : 1.f) : 0.f;
     character_set_speed(player_ped.render, gait);
   }
   place_player_pedestrian();

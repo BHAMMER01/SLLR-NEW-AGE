@@ -290,3 +290,85 @@ press the cruise hotkey.
   pedestrian type and the matching generated transition files alongside the
   executable. Missing files fall back to walking on exit and immediate car
   restoration on entry. In-game transition visuals remain unverified.
+
+## 2026-11-25 - On-foot camera follows the pedestrian (free look, no spin)
+
+- Scope: player-pedestrian camera only. No vehicle physics, scripts, saves or
+  rendering pipeline changes.
+- Intent: F must anchor the camera on the actor that leaves the car, return it
+  to the vehicle on re-entry, turn with the mouse without the right button
+  (drone-like), and never spin. The Godot get-in/get-out clips are no longer
+  used on entry/exit.
+- Changes: `anchor_onfoot_camera` hands `GameRefState::follow_vehicle` to the
+  actor's live id; `part_camera_pose` answers a RenderRef with the player's own
+  position/yaw (not the car's scene tree); `GameRefState::follow_azimuth` keeps
+  the ped eye azimuth and only the mouse orbit changes it, so a ped that turns
+  to its camera-relative movement direction no longer chases the camera's own
+  yaw; `sync_free_camera_mouse` also captures while `player_on_foot`, giving
+  free look without the right button (drone sign convention); entry restores
+  the saved camera fields and removes the actor. Removed the unused transition
+  clip binding and the door/get-in sequence.
+- Facing fix: the human mesh faces +Z (`heading = (sin yaw, cos yaw)`), the car
+  faces -Z. Player yaw now uses `atan2(dx, dz)` and `atan2(-car[8], -car[10])`;
+  the previous car convention made the actor walk backwards.
+- Build: `cmd /c build\build_onfoot_door.bat` (MSVC 2022 BuildTools + VS 18
+  CMake, Release x64, target `slrr_host`) passed.
+- Runtime: automated ValoCity runs (`--auto-city`, Baiern 0x6, Vulkan) log
+  `[onfoot] entered native pedestrian mode (camera follows ped...)`, then
+  `follow == actor`, a stable eye distance (~4.2 m) and a fixed `camyaw`
+  while W/A/D are held (`[onfoot-trace]`), then
+  `[onfoot] camera back on vehicle` and `[onfoot] returned to controlled car`.
+  A separate run with only mouse deltas injected and no right button is pending
+  interactive confirmation.
+- Limits: on-foot mouse capture pins the cursor, so HUD pointer clicks are not
+  available while walking; the actor yaw snaps to the movement direction
+  without turn smoothing; visual approval of the on-foot view is still
+  interactive.
+
+## 2026-11-25 - On-foot camera keeps ownership (C ignored, cockpit reset)
+
+- Scope: player-pedestrian camera ownership and input only. No physics,
+  scripts, save data or render changes.
+- Intent: pressing C while on foot must not take the view off the pedestrian,
+  and leaving the car from the internal (cockpit) camera must still chase the
+  actor.
+- Changes: `host_input_check_hotkeys` ignores C while `player_on_foot` and logs
+  `[camera] C ignored: on foot`; `OnFootCameraSave` now stores `cockpit_index`,
+  `anchor_onfoot_camera` clears it to -1 (the RenderRef path has no cockpit),
+  and `tick_player_pedestrian` re-asserts `follow_vehicle` to the actor
+  (variant 0, not attached) whenever a script or camera command retargets it,
+  leaving orbit and distance untouched.
+- Build: `cmd /c build\build_onfoot_door.bat` (MSVC 2022 BuildTools, Release
+  x64, `slrr_host`) passed.
+- Runtime: automated ValoCity run pressed C twice in the car, then F and C
+  repeatedly on foot. The log shows six `[camera] C ignored: on foot, camera
+  stays on the pedestrian` lines and `[onfoot-trace] follow == actor` with a
+  stable ~4.2 m eye distance for the whole walk; no pose loss.
+- Limits: on-foot camera modes are fixed (no per-mode distance); visual
+  approval remains interactive.
+
+## 2026-11-25 - On-foot framing and skinned character shadow reception
+
+- Scope: RenderRef follow-camera framing and skinned character lighting only.
+  Vehicle camera and global scene-shadow settings are unchanged.
+- Camera: increased the on-foot start distance to 4.4 m, zoom range to
+  2.4–8.5 m, shoulder-height target anchor to 1.55 m and follow response to
+  9/s. The camera offset/elevation is preserved; only its aim point moves up.
+- Lighting: the skinned path marks character fragments, does not receive the
+  dynamic scene/car shadow maps or screen-space AO, and gets a 22% diffuse-sun
+  ambient fill. Skinned actors continue to cast shadows onto the world. This
+  avoids the broad false self-shade visible on the body and keeps its back
+  readable without changing car or terrain shadows.
+- Mouse: Win32 reports positive raw deltas for right/down. Free flight rotates
+  its view direction directly, while on-foot mode moves the camera eye around
+  its target; these coordinate frames need opposite signs. The previous shared
+  free-flight sign inverted the on-foot orbit.
+- Drone isolation: car and pedestrian controls are cleared while flight is
+  active, both at input polling and at their simulation consumers. This also
+  covers the toggle frame; F cannot enter or exit pedestrian mode during flight.
+- Build: Release `slrr_host` and the DXBC, GLSL and SPIR-V shader variants
+  passed. `scripts/check_knowledge_refs.py` passed with 665 references and no
+  errors.
+- Runtime: the Vulkan New Age build opened ValoCity. Mouse polarity, the
+  raised shoulder anchor and no-motion input while flying need in-game
+  confirmation in the latest relaunched build.

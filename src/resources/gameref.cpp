@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -975,13 +976,14 @@ static bool driving_camera_pose(GameRefState& cam, float* eye, float* at,
   // the offset. This avoids camera lag when a render frame has fewer ticks.
   const double azimuth = target_azimuth + cam.orbit_yaw +
                          (cam.follow_variant == 4 ? 3.141592653589793 : 0);
-  const double lift = cam.follow_variant == 4 ? 1.9 : cam.follow_variant == 3 ? 2.4 : 1.4;
+  const bool pedestrian = target->kind == GameRefKind::RenderRef;
+  const double lift = cam.follow_variant == 4 ? 1.9 : cam.follow_variant == 3 ? 2.4 : pedestrian ? 1.75 : 1.4;
   const double radius = std::hypot(distance, lift);
   const double elevation = std::clamp(std::atan2(lift, distance) + cam.orbit_pitch, -1.35, 1.35);
   const Vec3 offset{std::sin(azimuth) * std::cos(elevation) * radius,
                     std::sin(elevation) * radius,
                     std::cos(azimuth) * std::cos(elevation) * radius};
-  const Vec3 focus{frame[12], frame[13] + 1.1, frame[14]};
+  const Vec3 focus{frame[12], frame[13] + (pedestrian ? 1.55 : 1.1), frame[14]};
   const Vec3 desired = focus + offset;
   const float position[3] = {float(desired.x), float(desired.y), float(desired.z)};
   const float center[3] = {float(focus.x), float(focus.y), float(focus.z)};
@@ -992,7 +994,8 @@ static bool driving_camera_pose(GameRefState& cam, float* eye, float* at,
     cam.follow_hold = true;
     held_follow_pose(cam, center, float(target_azimuth), dt);
   } else {
-    const float weight = -std::expm1(-dt * (cam.follow_variant ? 9.f : 5.f));
+    const float followRate = pedestrian ? 9.f : cam.follow_variant ? 9.f : 5.f;
+    const float weight = -std::expm1(-dt * followRate);
     for (int i = 0; i < 3; ++i)
       cam.eye_s[i] = std::lerp(cam.eye_s[i] + center[i] - cam.look_s[i], position[i], weight);
   }
@@ -1009,6 +1012,22 @@ static bool driving_camera_pose(GameRefState& cam, float* eye, float* at,
     std::copy_n(eye, 3, cam.pos);
     cam.ypr[0] = std::atan2(eye[0] - at[0], eye[2] - at[2]);
     cam.ypr[1] = std::atan2(at[1] - eye[1], std::hypot(eye[0] - at[0], eye[2] - at[2]));
+  }
+  if (target->kind == GameRefKind::RenderRef &&
+      std::getenv("SLRR_CAMERA_TRACE")) {
+    static double trace_seconds = 0.0;
+    trace_seconds += std::max(dt, 0.f);
+    if (trace_seconds >= .25) {
+      trace_seconds = 0.0;
+      std::fprintf(stderr,
+                   "[camera-trace] pose cam=%d target=%d free=%d follow=%d "
+                   "orbit=(%.4f,%.4f) hold=%d gain=%.3f eye=(%.3f,%.3f,%.3f) "
+                   "at=(%.3f,%.3f,%.3f)\n",
+                   cam.cam_seq, target_id, cam.camera_free ? 1 : 0,
+                   cam.follow_vehicle, cam.orbit_yaw, cam.orbit_pitch,
+                   cam.follow_hold ? 1 : 0, cam.angle_gain,
+                   eye[0], eye[1], eye[2], at[0], at[1], at[2]);
+    }
   }
   return true;
 }
@@ -1190,11 +1209,29 @@ void gameref_orbit_world_camera(float yaw_delta, float pitch_delta, float key_ya
   ay += key_pitch;
   GameRefState* cam = fullscreen_script_camera();
   if (cam && (cam->camera_free || (cam->follow_vehicle && cam->cockpit_index < 0))) {
+    // Win32 raw mouse deltas are +right/+down. Free flight changes the view
+    // direction directly; follow mode changes the eye position around its
+    // target. Those coordinate frames have opposite signs, so sharing one
+    // sign made the pedestrian orbit move opposite to the mouse.
     const float mouse_sign = cam->camera_free ? -1.f : 1.f;
+    const float old_yaw = cam->orbit_yaw;
+    const float old_pitch = cam->orbit_pitch;
     cam->orbit_yaw = std::remainder(
         cam->orbit_yaw + mouse_sign * in.mouse_dx * .003f, 6.2831853f);
     cam->orbit_pitch = std::clamp(
         cam->orbit_pitch + mouse_sign * in.mouse_dy * .003f, -1.1f, 1.1f);
+    if (std::getenv("SLRR_CAMERA_TRACE") &&
+        (std::fabs(in.mouse_dx) > 1e-4f || std::fabs(in.mouse_dy) > 1e-4f)) {
+      std::fprintf(stderr,
+                   "[camera-trace] input dx=%.1f dy=%.1f sign=%.0f cam=%d "
+                   "free=%d follow=%d kind=%d orbit=(%.4f,%.4f)->(%.4f,%.4f) "
+                   "gain=%.3f hold=%d\n",
+                   in.mouse_dx, in.mouse_dy, mouse_sign, cam->cam_seq,
+                   cam->camera_free ? 1 : 0, cam->follow_vehicle,
+                   static_cast<int>(cam->kind), old_yaw, old_pitch,
+                   cam->orbit_yaw, cam->orbit_pitch, cam->angle_gain,
+                   cam->follow_hold ? 1 : 0);
+    }
   }
   in.mouse_dx = in.mouse_dy = 0.f;
   if (!cam || cam->cockpit_index >= 0) return;

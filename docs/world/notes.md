@@ -35,7 +35,48 @@ azimuth (set behind the actor on exit) and only the mouse orbit changes it;
 the heading-derived azimuth and its tractrix tow stay car-only. Re-entry
 restores the saved camera fields (`restore_onfoot_camera`), so the slot returns
 to the controlled vehicle. `target_point` still cannot drive RenderRef nodes;
-the follow slot is the supported path.
+the follow slot is the supported path. `part_camera_pose` answers the ped from
+the player's own position/yaw fields, not from the car's scene tree, so culling
+or detaching the car cannot drop the view.
+
+Free look: the raw-mouse capture that the drone uses (`sync_free_camera_mouse`)
+also engages while `host_input().player_on_foot` is set, so the mouse turns the
+on-foot view without the right button. The ped uses the drone's sign
+convention (mouse right looks right, mouse down looks down); the car keeps the
+grab-style drag. Modals, loading plates and frontend pointer UI still take the
+pointer back.
+
+Camera ownership: C (`java.game.Track.osdCommand` follow/TV/chase/cockpit) is
+ignored on foot, because it retargets the shared camera to the car. Exiting
+from the internal cockpit camera also cleared nothing before: `cockpit_index`
+stayed >= 0, so the chase pose never ran for the actor. The save/restore pair
+now carries `cockpit_index`, the anchor sets it to -1, and
+`tick_player_pedestrian` re-asserts the actor as `follow_vehicle` (variant 0,
+not attached) every frame in case a city script retargets the camera, without
+touching the user's orbit or distance.
+
+Framing and skin lighting follow-up (2026-11-25): the on-foot follow camera
+starts at 4.4 m, can zoom from 2.4 to 8.5 m, targets 1.25 m above the actor,
+and uses a 9/s follow response. The target anchor is 1.55 m above the actor's
+origin (shoulder area), while the camera offset remains unchanged. These values
+apply only to RenderRefs; vehicle
+camera defaults are unchanged. Win32 raw mouse deltas use mode-specific signs:
+the on-foot follow camera changes the eye position around the actor, while free
+flight changes the view direction in place. Their coordinate frames have
+opposite signs; sharing the free-flight sign inverted on-foot orbit. Skinned
+characters cast shadows onto the world but do not receive dynamic scene/car
+shadow maps or screen-space AO on their own surfaces; a small daylight ambient
+fill keeps the side facing away from the sun readable. This is a deliberate
+character-only rendering rule to prevent self-shadow and vehicle-depth
+artifacts. Compare at noon, in building shade and around NPCs before tuning the
+fill further.
+
+Drone input ownership: while `free_camera_mode` is active, the camera consumes
+WASD/vertical controls, and `host_input_update_controller`, the drive setup and
+`tick_player_pedestrian` suppress car and pedestrian controls. The F key
+cannot enter or leave pedestrian mode during flight. This also guards the
+frame in which DEL toggles flight, before stale polled input can move either
+actor.
 
 Facing: the human mesh's front is its +Z axis (`PedestrianLines::spawn` uses
 `heading = (sin yaw, cos yaw)`), while the car's front is -Z. The player yaw

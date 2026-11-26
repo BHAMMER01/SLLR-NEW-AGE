@@ -43,8 +43,17 @@ void main()
 	v_texcoord1 = vec2(0.0, 0.0);
 	v_texcoord2 = vec2(0.0, 0.0);
 	v_color0 = vec4(1.0, 1.0, 1.0, 1.0);
-	v_tint = vec4(1.0, 1.0, 1.0, 1.0);
+	// v_tint.w marks skinned character surfaces for the shared mesh fragment
+	// shader. The RGB channels remain the ordinary white placement tint.
+	v_tint = vec4(1.0, 1.0, 1.0, 0.0);
 	vec4 world = mul(u_model[0], position);
-	v_staticShadow = mul(u_staticShadowMtx, world).xyz;
+	// Keep the shadow receiver just off the animated surface. Unlike vs_mesh,
+	// this path skins its own normals, so omitting the receiver bias made the
+	// character acne/self-shadow as the camera crossed sun-cascade boundaries.
+	float normalLength = length(v_normal);
+	vec3 shadowWorld = world.xyz;
+	if (normalLength > 1e-5)
+		shadowWorld += v_normal * (0.05 / normalLength);
+	v_staticShadow = mul(u_staticShadowMtx, vec4(shadowWorld, 1.0)).xyz;
 	v_worldPos = world.xyz;
 }
